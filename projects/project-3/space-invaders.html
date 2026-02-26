@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Space Invaders</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: monospace; color: #0f0; }
+canvas { border: 1px solid #0f0; }
+#ui { display: flex; gap: 40px; margin-bottom: 10px; font-size: 18px; }
+#msg { font-size: 24px; margin-top: 10px; min-height: 30px; }
+</style>
+</head>
+<body>
+<div id="ui"><span>SCORE: <span id="score">0</span></span><span>LIVES: <span id="lives">3</span></span><span>LEVEL: <span id="level">1</span></span></div>
+<canvas id="c" width="800" height="600"></canvas>
+<div id="msg"></div>
+<script>
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+const W = c.width, H = c.height;
+
+let score = 0, lives = 3, level = 1, gameOver = false, paused = false;
+let animId;
+
+// Ship
+const ship = { x: W/2, y: H - 50, w: 40, h: 20, speed: 5, shooting: false };
+
+// Bullets
+let bullets = [];
+let alienBullets = [];
+
+// Aliens
+const COLS = 11, ROWS = 5;
+let aliens = [];
+let alienDir = 1, alienSpeed = 0.5, alienDrop = 20, alienShootTimer = 0;
+let alienBulletSpeed = 3;
+
+// Barriers
+let barriers = [];
+
+const keys = {};
+document.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Space') e.preventDefault();
+});
+document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+function initAliens() {
+  aliens = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c2 = 0; c2 < COLS; c2++) {
+      aliens.push({
+        x: 80 + c2 * 60,
+        y: 60 + r * 50,
+        w: 36, h: 24,
+        type: r < 1 ? 2 : r < 3 ? 1 : 0,
+        alive: true
+      });
+    }
+  }
+  alienDir = 1;
+  alienSpeed = 0.5 + (level - 1) * 0.2;
+  alienBulletSpeed = 3 + (level - 1) * 0.5;
+}
+
+function initBarriers() {
+  barriers = [];
+  const bx = [120, 280, 440, 600, 760];
+  for (const bxv of bx) {
+    for (let r = 0; r < 5; r++) {
+      for (let col = 0; col < 8; col++) {
+        barriers.push({ x: bxv - 40 + col * 10, y: H - 130 + r * 10, w: 10, h: 10, alive: true });
+      }
+    }
+  }
+}
+
+function resetGame() {
+  score = 0; lives = 3; level = 1; gameOver = false;
+  bullets = []; alienBullets = [];
+  ship.x = W/2;
+  ship.shooting = false;
+  initAliens();
+  initBarriers();
+  document.getElementById('msg').textContent = '';
+  updateUI();
+  if (animId) cancelAnimationFrame(animId);
+  loop();
+}
+
+function nextLevel() {
+  level++;
+  bullets = []; alienBullets = [];
+  ship.x = W/2;
+  ship.shooting = false;
+  initAliens();
+  initBarriers();
+  updateUI();
+}
+
+function updateUI() {
+  document.getElementById('score').textContent = score;
+  document.getElementById('lives').textContent = lives;
+  document.getElementById('level').textContent = level;
+}
+
+function drawShip(x, y) {
+  ctx.fillStyle = '#0f0';
+  // Body
+  ctx.fillRect(x - 20, y, 40, 15);
+  // Nose
+  ctx.beginPath();
+  ctx.moveTo(x, y - 12);
+  ctx.lineTo(x - 8, y);
+  ctx.lineTo(x + 8, y);
+  ctx.fill();
+  // Gun
+  ctx.fillRect(x - 3, y - 20, 6, 10);
+}
+
+function drawAlien(a) {
+  const t = a.type;
+  ctx.fillStyle = t === 2 ? '#f0f' : t === 1 ? '#0ff' : '#ff0';
+  const x = a.x, y = a.y, w = a.w, h = a.h;
+  if (t === 0) {
+    // Crab
+    ctx.fillRect(x-16, y+4, 32, 12);
+    ctx.fillRect(x-12, y, 24, 8);
+    ctx.fillRect(x-8, y-4, 16, 6);
+    ctx.fillRect(x-18, y+6, 4, 8);
+    ctx.fillRect(x+14, y+6, 4, 8);
+    ctx.fillRect(x-20, y+12, 4, 4);
+    ctx.fillRect(x+16, y+12, 4, 4);
+  } else if (t === 1) {
+    // Squid
+    ctx.fillRect(x-12, y, 24, 14);
+    ctx.fillRect(x-16, y+4, 32, 6);
+    ctx.fillRect(x-8, y-4, 16, 6);
+    ctx.fillRect(x-16, y+14, 6, 6);
+    ctx.fillRect(x-4, y+14, 8, 6);
+    ctx.fillRect(x+10, y+14, 6, 6);
+  } else {
+    // UFO top row
+    ctx.fillRect(x-8, y-6, 16, 8);
+    ctx.fillRect(x-14, y, 28, 10);
+    ctx.fillRect(x-18, y+4, 36, 6);
+    ctx.fillRect(x-10, y+10, 6, 6);
+    ctx.fillRect(x+4, y+10, 6, 6);
+  }
+}
+
+let lastTime = 0;
+function loop(ts = 0) {
+  const dt = Math.min((ts - lastTime) / 16.67, 3);
+  lastTime = ts;
+
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  if (gameOver) {
+    ctx.fillStyle = '#f00';
+    ctx.font = '48px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('GAME OVER', W/2, H/2 - 30);
+    ctx.fillStyle = '#0f0';
+    ctx.font = '24px monospace';
+    ctx.fillText(`SCORE: ${score}`, W/2, H/2 + 20);
+    ctx.fillText('Press R to restart', W/2, H/2 + 60);
+    if (keys['KeyR']) resetGame();
+    animId = requestAnimationFrame(loop);
+    return;
+  }
+
+  // Move ship
+  if (keys['ArrowLeft']) ship.x = Math.max(ship.w/2 + 5, ship.x - ship.speed * dt * 3);
+  if (keys['ArrowRight']) ship.x = Math.min(W - ship.w/2 - 5, ship.x + ship.speed * dt * 3);
+
+  // Shoot
+  if (keys['Space'] && !ship.shooting) {
+    ship.shooting = true;
+    bullets.push({ x: ship.x, y: ship.y - 20, w: 4, h: 12, speed: 10 });
+  }
+  if (!keys['Space']) ship.shooting = false;
+
+  // Move player bullets
+  bullets = bullets.filter(b => {
+    b.y -= b.speed * dt * 2;
+    return b.y > -10;
+  });
+
+  // Move alien bullets
+  alienBullets = alienBullets.filter(b => {
+    b.y += alienBulletSpeed * dt * 2;
+    return b.y < H + 10;
+  });
+
+  // Alien movement
+  const liveAliens = aliens.filter(a => a.alive);
+  if (liveAliens.length === 0) { nextLevel(); animId = requestAnimationFrame(loop); return; }
+
+  let edgeHit = false;
+  for (const a of liveAliens) {
+    a.x += alienDir * alienSpeed * dt * 2;
+    if (a.x + a.w/2 >= W - 10 || a.x - a.w/2 <= 10) edgeHit = true;
+  }
+  if (edgeHit) {
+    alienDir *= -1;
+    alienSpeed = Math.min(alienSpeed * 1.05, 8);
+    for (const a of liveAliens) a.y += alienDrop;
+  }
+
+  // Alien shooting
+  alienShootTimer -= dt;
+  if (alienShootTimer <= 0) {
+    alienShootTimer = Math.max(20, 60 - level * 5) * Math.random();
+    // Pick random bottom alien in column
+    const cols = {};
+    for (const a of liveAliens) {
+      const col = Math.round(a.x / 60);
+      if (!cols[col] || a.y > cols[col].y) cols[col] = a;
+    }
+    const shooters = Object.values(cols);
+    if (shooters.length > 0) {
+      const s = shooters[Math.floor(Math.random() * shooters.length)];
+      alienBullets.push({ x: s.x, y: s.y + s.h, w: 4, h: 12 });
+    }
+  }
+
+  // Check if aliens reached bottom
+  for (const a of liveAliens) {
+    if (a.y + a.h >= H - 60) {
+      gameOver = true;
+      document.getElementById('msg').textContent = '';
+      break;
+    }
+  }
+
+  // Bullet-alien collision
+  for (const b of bullets) {
+    for (const a of aliens) {
+      if (!a.alive) continue;
+      if (b.x > a.x - a.w/2 && b.x < a.x + a.w/2 && b.y > a.y - 4 && b.y < a.y + a.h) {
+        a.alive = false;
+        b.y = -999;
+        score += a.type === 2 ? 30 : a.type === 1 ? 20 : 10;
+        updateUI();
+      }
+    }
+  }
+
+  // Bullet-barrier collision
+  for (const b of [...bullets, ...alienBullets]) {
+    for (const bar of barriers) {
+      if (!bar.alive) continue;
+      if (b.x + 2 > bar.x && b.x - 2 < bar.x + bar.w && b.y + 6 > bar.y && b.y < bar.y + bar.h) {
+        bar.alive = false;
+        b.y = -999;
+        b.x = -999;
+      }
+    }
+  }
+
+  // Alien bullet hits ship
+  for (const b of alienBullets) {
+    if (b.x > ship.x - 22 && b.x < ship.x + 22 && b.y + 12 > ship.y - 20 && b.y < ship.y + 15) {
+      b.y = -999;
+      lives--;
+      updateUI();
+      if (lives <= 0) gameOver = true;
+      else ship.x = W/2;
+    }
+  }
+
+  // Draw barriers
+  ctx.fillStyle = '#0f0';
+  for (const bar of barriers) {
+    if (bar.alive) ctx.fillRect(bar.x, bar.y, bar.w, bar.h);
+  }
+
+  // Draw aliens
+  for (const a of aliens) {
+    if (a.alive) drawAlien(a);
+  }
+
+  // Draw bullets
+  ctx.fillStyle = '#0f0';
+  for (const b of bullets) ctx.fillRect(b.x - 2, b.y, 4, 12);
+
+  ctx.fillStyle = '#f44';
+  for (const b of alienBullets) {
+    ctx.fillRect(b.x - 2, b.y, 4, 12);
+  }
+
+  // Draw ship
+  drawShip(ship.x, ship.y - 15);
+
+  // Ground line
+  ctx.fillStyle = '#0f0';
+  ctx.fillRect(0, H - 30, W, 2);
+
+  animId = requestAnimationFrame(loop);
+}
+
+// Start
+document.addEventListener('keydown', e => {
+  if (e.code === 'KeyR' && gameOver) resetGame();
+});
+
+initAliens();
+initBarriers();
+loop();
+</script>
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Pong</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; }
+canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+c.width = 800; c.height = 600;
+
+const W = c.width, H = c.height;
+const PAD_W = 12, PAD_H = 90, PAD_SPEED = 5;
+const BALL_SIZE = 10;
+
+let player = { x: 20, y: H/2 - PAD_H/2, score: 0 };
+let ai = { x: W - 20 - PAD_W, y: H/2 - PAD_H/2, score: 0 };
+let ball = { x: W/2, y: H/2, vx: 4, vy: 3 };
+let keys = {};
+
+document.addEventListener('keydown', e => keys[e.key] = true);
+document.addEventListener('keyup', e => keys[e.key] = false);
+
+function resetBall(dir) {
+  ball.x = W/2; ball.y = H/2;
+  ball.vx = 4 * dir;
+  ball.vy = (Math.random() * 4 - 2);
+}
+
+function update() {
+  if (keys['ArrowUp']) player.y -= PAD_SPEED;
+  if (keys['ArrowDown']) player.y += PAD_SPEED;
+  player.y = Math.max(0, Math.min(H - PAD_H, player.y));
+
+  let aiCenter = ai.y + PAD_H / 2;
+  if (ball.vx > 0) {
+    if (aiCenter < ball.y - 5) ai.y += PAD_SPEED * 0.85;
+    else if (aiCenter > ball.y + 5) ai.y -= PAD_SPEED * 0.85;
+  }
+  ai.y = Math.max(0, Math.min(H - PAD_H, ai.y));
+
+  ball.x += ball.vx;
+  ball.y += ball.vy;
+
+  if (ball.y <= 0) { ball.y = 0; ball.vy *= -1; }
+  if (ball.y + BALL_SIZE >= H) { ball.y = H - BALL_SIZE; ball.vy *= -1; }
+
+  if (ball.x <= player.x + PAD_W && ball.x >= player.x &&
+      ball.y + BALL_SIZE >= player.y && ball.y <= player.y + PAD_H) {
+    ball.x = player.x + PAD_W;
+    ball.vx = Math.abs(ball.vx) * 1.05;
+    let hit = (ball.y + BALL_SIZE/2 - (player.y + PAD_H/2)) / (PAD_H/2);
+    ball.vy = hit * 5;
+  }
+
+  if (ball.x + BALL_SIZE >= ai.x && ball.x + BALL_SIZE <= ai.x + PAD_W &&
+      ball.y + BALL_SIZE >= ai.y && ball.y <= ai.y + PAD_H) {
+    ball.x = ai.x - BALL_SIZE;
+    ball.vx = -Math.abs(ball.vx) * 1.05;
+    let hit = (ball.y + BALL_SIZE/2 - (ai.y + PAD_H/2)) / (PAD_H/2);
+    ball.vy = hit * 5;
+  }
+
+  const maxSpeed = 14;
+  if (Math.abs(ball.vx) > maxSpeed) ball.vx = maxSpeed * Math.sign(ball.vx);
+  if (Math.abs(ball.vy) > maxSpeed) ball.vy = maxSpeed * Math.sign(ball.vy);
+
+  if (ball.x < 0) { ai.score++; resetBall(1); }
+  if (ball.x > W) { player.score++; resetBall(-1); }
+}
+
+function draw() {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.setLineDash([10, 10]);
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(W/2, 0); ctx.lineTo(W/2, H); ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 48px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(player.score, W/4, 60);
+  ctx.fillText(ai.score, 3*W/4, 60);
+
+  ctx.font = '14px monospace';
+  ctx.fillStyle = '#555';
+  ctx.fillText('YOU', W/4, 85);
+  ctx.fillText('AI', 3*W/4, 85);
+
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(player.x, player.y, PAD_W, PAD_H);
+  ctx.fillRect(ai.x, ai.y, PAD_W, PAD_H);
+
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(ball.x, ball.y, BALL_SIZE, BALL_SIZE);
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>

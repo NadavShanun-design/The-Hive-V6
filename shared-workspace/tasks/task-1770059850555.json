@@ -1,0 +1,9 @@
+{
+  "id": "task-1770059850555",
+  "agent": "coder",
+  "command": "echo 'Hello from auto-prompt\\!' && ls -la",
+  "status": "pending",
+  "createdAt": "2026-02-02T19:17:30.555Z",
+  "completedAt": null,
+  "result": null
+}

@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClawBot - Argument Automation Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: #0a0a0a;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 40px;
+            color: #e8e8e8;
+        }
+
+        .container {
+            background: #1a1a1a;
+            border-radius: 12px;
+            border: 1px solid #2a2a2a;
+            max-width: 600px;
+            width: 100%;
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a1a1a 0%, #2a1a1a 100%);
+            padding: 32px;
+            text-align: center;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .claw-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+            filter: drop-shadow(0 0 8px rgba(222, 86, 44, 0.3));
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+            color: #de562c;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+
+        .header p {
+            font-size: 13px;
+            color: #999;
+            font-weight: 400;
+        }
+
+        .phone-status {
+            padding: 24px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            padding: 12px;
+            background: #0f0f0f;
+            border-radius: 8px;
+            border: 1px solid #2a2a2a;
+        }
+
+        .status-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #666;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.connected {
+            background: #de562c;
+            box-shadow: 0 0 10px rgba(222, 86, 44, 0.5);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .status-text {
+            font-weight: 500;
+            color: #999;
+            font-size: 13px;
+        }
+
+        .connect-btn {
+            width: 100%;
+            padding: 14px;
+            background: #de562c;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .connect-btn:hover {
+            background: #c94d27;
+            box-shadow: 0 4px 12px rgba(222, 86, 44, 0.3);
+        }
+
+        .connect-btn:active {
+            transform: scale(0.98);
+        }
+
+        .main-content {
+            padding: 24px;
+        }
+
+        .content-title {
+            font-size: 14px;
+            color: #999;
+            margin-bottom: 16px;
+            font-weight: 500;
+        }
+
+        .fight-categories {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .fight-btn {
+            padding: 16px;
+            background: #2a2a2a;
+            border: 1px solid #3a3a3a;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: #e8e8e8;
+            text-align: left;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .fight-btn:hover {
+            background: #333;
+            border-color: #de562c;
+            transform: translateY(-2px);
+        }
+
+        .fight-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .fight-btn:disabled:hover {
+            background: #2a2a2a;
+            border-color: #3a3a3a;
+        }
+
+        .fight-icon {
+            font-size: 20px;
+            margin-bottom: 4px;
+        }
+
+        .fight-title {
+            font-weight: 600;
+            color: #de562c;
+            font-size: 13px;
+        }
+
+        .fight-desc {
+            font-size: 11px;
+            color: #666;
+            line-height: 1.4;
+        }
+
+        .conversation-preview {
+            background: #0f0f0f;
+            border: 1px solid #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .conversation-preview.active {
+            display: block;
+        }
+
+        .preview-header {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .message {
+            margin-bottom: 12px;
+            padding: 12px;
+            border-radius: 6px;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.bot {
+            background: #2a1a1a;
+            border-left: 3px solid #de562c;
+        }
+
+        .message-sender {
+            font-weight: 600;
+            margin-bottom: 6px;
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #de562c;
+            letter-spacing: 0.5px;
+        }
+
+        .message-text {
+            color: #ccc;
+            line-height: 1.5;
+            font-size: 13px;
+        }
+
+        .footer {
+            padding: 16px 24px;
+            background: #0f0f0f;
+            border-top: 1px solid #2a2a2a;
+            text-align: center;
+            font-size: 11px;
+            color: #666;
+        }
+
+        .footer a {
+            color: #de562c;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="claw-icon">🦞</div>
+            <h1>ClawBot</h1>
+            <p>Argument Automation Tool</p>
+        </div>
+
+        <div class="phone-status">
+            <div class="status-indicator">
+                <div class="status-left">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span class="status-text">Phone Status: <span id="statusLabel">Disconnected</span></span>
+                </div>
+            </div>
+            <button class="connect-btn" id="connectBtn">Connect Your Phone</button>
+        </div>
+
+        <div class="main-content">
+            <div class="content-title">Choose a fight category to start</div>
+
+            <div class="fight-categories">
+                <button class="fight-btn" id="dishwasherBtn" disabled>
+                    <div class="fight-icon">🍽️</div>
+                    <div class="fight-title">Dishwasher Wars</div>
+                    <div class="fight-desc">Loading patterns, soap placement</div>
+                </button>
+
+                <button class="fight-btn" id="textingBtn" disabled>
+                    <div class="fight-icon">💬</div>
+                    <div class="fight-title">Texting Etiquette</div>
+                    <div class="fight-desc">Response times, read receipts</div>
+                </button>
+
+                <button class="fight-btn" id="foodBtn" disabled>
+                    <div class="fight-icon">🍕</div>
+                    <div class="fight-title">Food Choices</div>
+                    <div class="fight-desc">Eating methods, preparation</div>
+                </button>
+
+                <button class="fight-btn" id="householdBtn" disabled>
+                    <div class="fight-icon">🏠</div>
+                    <div class="fight-title">Household Items</div>
+                    <div class="fight-desc">Toilet paper, towels, bread bags</div>
+                </button>
+
+                <button class="fight-btn" id="techBtn" disabled>
+                    <div class="fight-icon">💻</div>
+                    <div class="fight-title">Tech Debates</div>
+                    <div class="fight-desc">Pronunciation, brightness, GIFs</div>
+                </button>
+
+                <button class="fight-btn" id="dailyBtn" disabled>
+                    <div class="fight-icon">⏰</div>
+                    <div class="fight-title">Daily Routines</div>
+                    <div class="fight-desc">Alarms, driving routes, coffee</div>
+                </button>
+            </div>
+
+            <div class="conversation-preview" id="conversationPreview">
+                <div class="preview-header">Message Preview</div>
+                <div id="messageContainer"></div>
+            </div>
+        </div>
+
+        <div class="footer">
+            Powered by ClawBot • <a href="#">Documentation</a>
+        </div>
+    </div>
+
+    <script src="fightbot.js"></script>
+</body>
+</html>

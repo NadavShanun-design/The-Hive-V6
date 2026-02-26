@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Breakout</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #111; display: flex; justify-content: center; align-items: center; height: 100vh; }
+canvas { border: 2px solid #444; }
+</style>
+</head>
+<body>
+<canvas id="c" width="480" height="520"></canvas>
+<script>
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+
+const W = 480, H = 520;
+const ROWS = 6, COLS = 10;
+const BW = 44, BH = 16, BPAD = 2;
+
+let paddle = { x: W/2 - 40, y: H - 30, w: 80, h: 12, speed: 6 };
+let ball = { x: W/2, y: H - 60, vx: 4, vy: -4, r: 8 };
+let bricks = [];
+let score = 0, lives = 3, state = 'play'; // play, over, win
+let keys = {};
+
+const colors = ['#ff4444','#ff8800','#ffdd00','#44ff44','#4488ff','#aa44ff'];
+
+function initBricks() {
+  bricks = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c2 = 0; c2 < COLS; c2++) {
+      bricks.push({
+        x: c2 * (BW + BPAD) + 4,
+        y: r * (BH + BPAD) + 50,
+        w: BW, h: BH,
+        alive: true,
+        color: colors[r]
+      });
+    }
+  }
+}
+
+initBricks();
+
+document.addEventListener('keydown', e => keys[e.key] = true);
+document.addEventListener('keyup', e => keys[e.key] = false);
+
+function update() {
+  if (state !== 'play') return;
+
+  if (keys['ArrowLeft']) paddle.x = Math.max(0, paddle.x - paddle.speed);
+  if (keys['ArrowRight']) paddle.x = Math.min(W - paddle.w, paddle.x + paddle.speed);
+
+  ball.x += ball.vx;
+  ball.y += ball.vy;
+
+  // Wall bounce
+  if (ball.x - ball.r < 0) { ball.x = ball.r; ball.vx = Math.abs(ball.vx); }
+  if (ball.x + ball.r > W) { ball.x = W - ball.r; ball.vx = -Math.abs(ball.vx); }
+  if (ball.y - ball.r < 0) { ball.y = ball.r; ball.vy = Math.abs(ball.vy); }
+
+  // Paddle collision
+  if (ball.vy > 0 &&
+      ball.y + ball.r >= paddle.y &&
+      ball.y + ball.r <= paddle.y + paddle.h &&
+      ball.x >= paddle.x && ball.x <= paddle.x + paddle.w) {
+    ball.vy = -Math.abs(ball.vy);
+    let hit = (ball.x - (paddle.x + paddle.w/2)) / (paddle.w/2);
+    ball.vx = hit * 6;
+    ball.y = paddle.y - ball.r;
+  }
+
+  // Lost ball
+  if (ball.y - ball.r > H) {
+    lives--;
+    if (lives <= 0) { state = 'over'; return; }
+    ball.x = W/2; ball.y = H - 60; ball.vx = 4; ball.vy = -4;
+  }
+
+  // Brick collision
+  for (let b of bricks) {
+    if (!b.alive) continue;
+    if (ball.x + ball.r > b.x && ball.x - ball.r < b.x + b.w &&
+        ball.y + ball.r > b.y && ball.y - ball.r < b.y + b.h) {
+      b.alive = false;
+      score += 10;
+
+      // Which side?
+      let overlapL = ball.x + ball.r - b.x;
+      let overlapR = b.x + b.w - (ball.x - ball.r);
+      let overlapT = ball.y + ball.r - b.y;
+      let overlapB = b.y + b.h - (ball.y - ball.r);
+      let minH = Math.min(overlapL, overlapR);
+      let minV = Math.min(overlapT, overlapB);
+      if (minH < minV) ball.vx = -ball.vx;
+      else ball.vy = -ball.vy;
+      break;
+    }
+  }
+
+  if (bricks.every(b => !b.alive)) state = 'win';
+}
+
+function draw() {
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0, 0, W, H);
+
+  // Bricks
+  for (let b of bricks) {
+    if (!b.alive) continue;
+    ctx.fillStyle = b.color;
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.fillRect(b.x, b.y, b.w, 4);
+  }
+
+  // Paddle
+  ctx.fillStyle = '#eee';
+  ctx.beginPath();
+  ctx.roundRect(paddle.x, paddle.y, paddle.w, paddle.h, 6);
+  ctx.fill();
+
+  // Ball
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+  ctx.fill();
+
+  // HUD
+  ctx.fillStyle = '#aaa';
+  ctx.font = '16px monospace';
+  ctx.fillText('Score: ' + score, 10, 30);
+  ctx.fillText('Lives: ' + lives, W - 90, 30);
+
+  if (state === 'over') {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ff4444';
+    ctx.font = 'bold 48px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('GAME OVER', W/2, H/2 - 20);
+    ctx.fillStyle = '#aaa';
+    ctx.font = '20px monospace';
+    ctx.fillText('Press R to restart', W/2, H/2 + 30);
+    ctx.textAlign = 'left';
+  }
+
+  if (state === 'win') {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#44ff44';
+    ctx.font = 'bold 48px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('YOU WIN!', W/2, H/2 - 20);
+    ctx.fillStyle = '#aaa';
+    ctx.font = '20px monospace';
+    ctx.fillText('Press R to restart', W/2, H/2 + 30);
+    ctx.textAlign = 'left';
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'r' || e.key === 'R') {
+    score = 0; lives = 3; state = 'play';
+    paddle.x = W/2 - 40;
+    ball.x = W/2; ball.y = H - 60; ball.vx = 4; ball.vy = -4;
+    initBricks();
+  }
+});
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>

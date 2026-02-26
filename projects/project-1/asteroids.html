@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Asteroids</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+canvas { display: block; }
+#ui { position: fixed; top: 10px; left: 10px; color: #fff; font: 20px monospace; }
+#gameover { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); color: #fff; font: bold 40px monospace; text-align: center; display: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">SCORE: <span id="score">0</span> &nbsp; LIVES: <span id="lives">3</span></div>
+<div id="gameover" id="go">GAME OVER<br><span style="font-size:20px">Press R to restart</span></div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+const W = canvas.width, H = canvas.height;
+
+let keys = {};
+document.addEventListener('keydown', e => { keys[e.code] = true; });
+document.addEventListener('keyup', e => { keys[e.code] = false; });
+document.addEventListener('keydown', e => { if(e.code==='KeyR' && gameOver) init(); });
+
+let ship, bullets, asteroids, score, lives, gameOver, shootTimer, invincible, invTimer;
+
+function init() {
+  ship = { x: W/2, y: H/2, vx: 0, vy: 0, angle: -Math.PI/2, radius: 12, dead: false };
+  bullets = [];
+  asteroids = [];
+  score = 0;
+  lives = 3;
+  gameOver = false;
+  shootTimer = 0;
+  invincible = false;
+  invTimer = 0;
+  document.getElementById('gameover').style.display = 'none';
+  for (let i = 0; i < 5; i++) spawnAsteroid(3);
+}
+
+function spawnAsteroid(size, x, y) {
+  const angle = Math.random() * Math.PI * 2;
+  const speed = (4 - size) * 0.8 + Math.random();
+  let ax = x !== undefined ? x : (Math.random() < 0.5 ? Math.random() * W * 0.3 : W - Math.random() * W * 0.3);
+  let ay = y !== undefined ? y : (Math.random() < 0.5 ? Math.random() * H * 0.3 : H - Math.random() * H * 0.3);
+  const verts = 8 + Math.floor(Math.random() * 5);
+  const pts = [];
+  const r = size * 20 + 5;
+  for (let i = 0; i < verts; i++) {
+    const a = (i / verts) * Math.PI * 2;
+    const d = r * (0.7 + Math.random() * 0.5);
+    pts.push({ x: Math.cos(a) * d, y: Math.sin(a) * d });
+  }
+  asteroids.push({ x: ax, y: ay, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed, size, radius: r, pts, rot: 0, rotSpeed: (Math.random()-0.5)*0.05 });
+}
+
+function shoot() {
+  const s = ship;
+  bullets.push({ x: s.x + Math.cos(s.angle)*16, y: s.y + Math.sin(s.angle)*16, vx: Math.cos(s.angle)*10 + s.vx, vy: Math.sin(s.angle)*10 + s.vy, life: 60 });
+}
+
+function dist(a, b) { return Math.hypot(a.x-b.x, a.y-b.y); }
+
+function wrap(obj) {
+  if (obj.x < 0) obj.x += W;
+  if (obj.x > W) obj.x -= W;
+  if (obj.y < 0) obj.y += H;
+  if (obj.y > H) obj.y -= H;
+}
+
+function update() {
+  if (gameOver) return;
+
+  // Ship rotation
+  if (keys['ArrowLeft']) ship.angle -= 0.05;
+  if (keys['ArrowRight']) ship.angle += 0.05;
+
+  // Thrust
+  if (keys['ArrowUp']) {
+    ship.vx += Math.cos(ship.angle) * 0.3;
+    ship.vy += Math.sin(ship.angle) * 0.3;
+  }
+
+  // Friction
+  ship.vx *= 0.99;
+  ship.vy *= 0.99;
+
+  // Speed cap
+  const spd = Math.hypot(ship.vx, ship.vy);
+  if (spd > 8) { ship.vx = ship.vx/spd*8; ship.vy = ship.vy/spd*8; }
+
+  // Move ship
+  ship.x += ship.vx;
+  ship.y += ship.vy;
+  wrap(ship);
+
+  // Shoot
+  shootTimer--;
+  if (keys['Space'] && shootTimer <= 0) { shoot(); shootTimer = 10; }
+
+  // Bullets
+  for (let i = bullets.length-1; i >= 0; i--) {
+    const b = bullets[i];
+    b.x += b.vx; b.y += b.vy; b.life--;
+    wrap(b);
+    if (b.life <= 0) { bullets.splice(i, 1); continue; }
+
+    // Bullet-asteroid collision
+    for (let j = asteroids.length-1; j >= 0; j--) {
+      const a = asteroids[j];
+      if (dist(b, a) < a.radius) {
+        bullets.splice(i, 1);
+        asteroids.splice(j, 1);
+        score += (4 - a.size) * 100;
+        document.getElementById('score').textContent = score;
+        if (a.size > 1) {
+          spawnAsteroid(a.size - 1, a.x, a.y);
+          spawnAsteroid(a.size - 1, a.x, a.y);
+        }
+        break;
+      }
+    }
+  }
+
+  // Asteroids
+  for (const a of asteroids) {
+    a.x += a.vx; a.y += a.vy;
+    a.rot += a.rotSpeed;
+    wrap(a);
+  }
+
+  // Invincibility
+  if (invincible) {
+    invTimer--;
+    if (invTimer <= 0) invincible = false;
+  }
+
+  // Ship-asteroid collision
+  if (!invincible) {
+    for (const a of asteroids) {
+      if (dist(ship, a) < a.radius + ship.radius - 5) {
+        lives--;
+        document.getElementById('lives').textContent = lives;
+        if (lives <= 0) {
+          gameOver = true;
+          document.getElementById('gameover').style.display = 'block';
+          return;
+        }
+        ship.x = W/2; ship.y = H/2; ship.vx = 0; ship.vy = 0;
+        invincible = true; invTimer = 180;
+        break;
+      }
+    }
+  }
+
+  // New wave
+  if (asteroids.length === 0) {
+    for (let i = 0; i < 5; i++) spawnAsteroid(3);
+  }
+}
+
+function draw() {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  // Draw asteroids
+  ctx.strokeStyle = '#aaa';
+  ctx.lineWidth = 1.5;
+  for (const a of asteroids) {
+    ctx.save();
+    ctx.translate(a.x, a.y);
+    ctx.rotate(a.rot);
+    ctx.beginPath();
+    ctx.moveTo(a.pts[0].x, a.pts[0].y);
+    for (let i = 1; i < a.pts.length; i++) ctx.lineTo(a.pts[i].x, a.pts[i].y);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Draw bullets
+  ctx.fillStyle = '#ff0';
+  for (const b of bullets) {
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, 2, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Draw ship (skip every other frame if invincible)
+  if (!invincible || Math.floor(invTimer / 5) % 2 === 0) {
+    ctx.save();
+    ctx.translate(ship.x, ship.y);
+    ctx.rotate(ship.angle);
+    ctx.strokeStyle = '#0f0';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(16, 0);
+    ctx.lineTo(-10, -9);
+    ctx.lineTo(-5, 0);
+    ctx.lineTo(-10, 9);
+    ctx.closePath();
+    ctx.stroke();
+    // Thruster flame
+    if (keys['ArrowUp'] && Math.random() > 0.3) {
+      ctx.strokeStyle = '#f80';
+      ctx.beginPath();
+      ctx.moveTo(-5, -4);
+      ctx.lineTo(-18 - Math.random()*8, 0);
+      ctx.lineTo(-5, 4);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+init();
+loop();
+</script>
+</body>
+</html>

@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Geo Dash</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; overflow: hidden; font-family: monospace; }
+canvas { border: 2px solid #e94560; box-shadow: 0 0 30px #e9456088; }
+#ui { color: #e0e0e0; text-align: center; margin-bottom: 12px; font-size: 14px; letter-spacing: 2px; }
+#score { color: #00d4ff; font-size: 22px; font-weight: bold; }
+</style>
+</head>
+<body>
+<div id="ui">
+  <div id="score">0%</div>
+  <div id="msg" style="color:#aaa;font-size:12px">SPACE / CLICK to jump</div>
+</div>
+<canvas id="c"></canvas>
+<script>
+const C = document.getElementById('c');
+const ctx = C.getContext('2d');
+C.width = 800; C.height = 400;
+
+const GROUND = 300;
+const TILE = 40;
+const SPEED_BASE = 5;
+const JUMP_VEL = -14;
+const GRAVITY = 0.7;
+
+let state = 'idle'; // idle, playing, dead
+let score = 0;
+let attempts = 0;
+let bestPct = 0;
+
+// Player
+let px, py, pvy, onGround, rotation;
+
+// Camera / world offset
+let camX;
+
+// Level obstacles (generated procedurally with rhythm)
+let obstacles = [];
+let levelLength; // total level pixel length
+
+function initPlayer() {
+  px = 150;
+  py = GROUND - TILE;
+  pvy = 0;
+  onGround = true;
+  rotation = 0;
+  camX = 0;
+}
+
+// Rhythm-based level generator
+function buildLevel() {
+  obstacles = [];
+  levelLength = 8000;
+
+  const patterns = [
+    // single spike
+    (x) => [{ type: 'spike', x: x, y: GROUND - 30 }],
+    // double spike
+    (x) => [
+      { type: 'spike', x: x, y: GROUND - 30 },
+      { type: 'spike', x: x + 40, y: GROUND - 30 }
+    ],
+    // gap (no ground for a stretch)
+    (x) => [{ type: 'gap', x: x, width: 120 }],
+    // spike over gap
+    (x) => [
+      { type: 'gap', x: x, width: 80 },
+      { type: 'spike', x: x - 10, y: GROUND - 30 }
+    ],
+    // platform with spike on top
+    (x) => [
+      { type: 'platform', x: x, y: GROUND - 80, width: 120 },
+      { type: 'spike', x: x + 40, y: GROUND - 80 - 30 }
+    ],
+    // stacked spikes
+    (x) => [
+      { type: 'spike', x: x, y: GROUND - 30 },
+      { type: 'spike', x: x, y: GROUND - 30 - 35, inverted: true }
+    ],
+    // wide gap
+    (x) => [{ type: 'gap', x: x, width: 160 }],
+  ];
+
+  // Ease in: start empty for a bit
+  let cursor = 600;
+  const spacing = [220, 180, 200, 260, 240, 190, 300, 210];
+  let si = 0;
+
+  while (cursor < levelLength - 600) {
+    const pat = patterns[Math.floor(Math.random() * patterns.length)];
+    const items = pat(cursor);
+    obstacles.push(...items);
+    cursor += spacing[si % spacing.length] + Math.random() * 60;
+    si++;
+  }
+
+  // Gaps: build a list of "ground absent" ranges
+  // We'll handle them in rendering / collision
+}
+
+function restart() {
+  attempts++;
+  initPlayer();
+  buildLevel();
+  state = 'playing';
+  document.getElementById('msg').textContent = 'SPACE / CLICK to jump  •  attempt ' + attempts;
+}
+
+function jump() {
+  if (state === 'idle') { restart(); return; }
+  if (state === 'dead') { restart(); return; }
+  if (onGround) {
+    pvy = JUMP_VEL;
+    onGround = false;
+  }
+}
+
+document.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); jump(); } });
+C.addEventListener('pointerdown', jump);
+
+// --- Gap handling: collect sorted gap ranges ---
+function getGapRanges() {
+  return obstacles.filter(o => o.type === 'gap').map(o => ({ start: o.x, end: o.x + o.width }));
+}
+
+function isInGap(worldX, gaps) {
+  for (const g of gaps) {
+    if (worldX >= g.start && worldX <= g.end) return true;
+  }
+  return false;
+}
+
+// --- Collision ---
+function checkCollision(gaps) {
+  const pr = { x: px + 4, y: py + 4, w: TILE - 8, h: TILE - 8 };
+
+  // Ground death (fell into gap)
+  if (py + TILE > GROUND + 10) {
+    // check if below ground and in gap
+    if (py > GROUND) return true;
+  }
+
+  for (const o of obstacles) {
+    if (o.type === 'spike') {
+      // Spike triangle hitbox (simplified box)
+      const sx = o.x + 4, sy = o.y + 8, sw = 32, sh = 22;
+      if (pr.x < sx + sw && pr.x + pr.w > sx && pr.y < sy + sh && pr.y + pr.h > sy) return true;
+    }
+    if (o.type === 'platform') {
+      // Only kill if side-collision; landing on top is handled in physics
+    }
+  }
+
+  // Flew off top
+  if (py < -200) return true;
+
+  return false;
+}
+
+// --- Physics ---
+function getPlatformAt(worldX, worldY) {
+  for (const o of obstacles) {
+    if (o.type === 'platform') {
+      if (worldX + TILE - 4 > o.x && worldX + 4 < o.x + o.width) {
+        return o;
+      }
+    }
+  }
+  return null;
+}
+
+function update() {
+  if (state !== 'playing') return;
+
+  const speed = SPEED_BASE;
+  px += speed; // player moves right in world space
+  camX = px - 150;
+
+  // Gravity
+  pvy += GRAVITY;
+  py += pvy;
+
+  const gaps = getGapRanges();
+
+  // Ground collision
+  const groundY = GROUND - TILE;
+  const playerCenterX = px + TILE / 2;
+
+  // Check if standing on a platform
+  const plat = getPlatformAt(px, py);
+
+  if (plat) {
+    const platTop = plat.y - TILE;
+    if (py >= platTop && py < platTop + 20 && pvy >= 0) {
+      py = platTop;
+      pvy = 0;
+      onGround = true;
+    }
+  } else if (!isInGap(playerCenterX, gaps)) {
+    // On solid ground
+    if (py >= groundY) {
+      py = groundY;
+      pvy = 0;
+      onGround = true;
+    }
+  } else {
+    onGround = false;
+  }
+
+  // Rotation
+  if (!onGround) {
+    rotation += 0.12;
+  } else {
+    // Snap to nearest 90deg
+    const snap = Math.round(rotation / (Math.PI / 2)) * (Math.PI / 2);
+    rotation += (snap - rotation) * 0.3;
+  }
+
+  // Score
+  score = Math.min(100, Math.floor((px / levelLength) * 100));
+  document.getElementById('score').textContent = score + '%';
+
+  // Win
+  if (px >= levelLength) {
+    state = 'win';
+    bestPct = 100;
+    document.getElementById('score').textContent = '100% ✓';
+    document.getElementById('msg').textContent = '🎉 YOU WIN! SPACE to replay';
+    return;
+  }
+
+  if (score > bestPct) bestPct = score;
+
+  // Collision check
+  if (checkCollision(gaps)) {
+    state = 'dead';
+    document.getElementById('msg').textContent = 'died at ' + score + '%  (best: ' + bestPct + '%)  •  SPACE to retry';
+  }
+}
+
+// --- Draw ---
+function drawBg() {
+  // Parallax background lines
+  const grad = ctx.createLinearGradient(0, 0, 0, C.height);
+  grad.addColorStop(0, '#0f0c29');
+  grad.addColorStop(1, '#1a1a2e');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, C.width, C.height);
+
+  // Moving grid lines
+  ctx.strokeStyle = 'rgba(233,69,96,0.08)';
+  ctx.lineWidth = 1;
+  const gOffset = (camX * 0.3) % 80;
+  for (let x = -gOffset; x < C.width; x += 80) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, C.height); ctx.stroke();
+  }
+  for (let y = 0; y < C.height; y += 80) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(C.width, y); ctx.stroke();
+  }
+}
+
+function worldToScreen(wx) { return wx - camX; }
+
+function drawGround(gaps) {
+  // Draw ground tiles
+  const tileW = 40;
+  const startTile = Math.floor(camX / tileW) - 1;
+  const endTile = startTile + Math.ceil(C.width / tileW) + 2;
+
+  for (let i = startTile; i <= endTile; i++) {
+    const worldX = i * tileW;
+    if (isInGap(worldX + tileW / 2, gaps)) continue;
+
+    const sx = worldToScreen(worldX);
+
+    // Ground block
+    ctx.fillStyle = '#16213e';
+    ctx.fillRect(sx, GROUND, tileW, C.height - GROUND);
+
+    // Top edge glow
+    ctx.fillStyle = '#0f3460';
+    ctx.fillRect(sx, GROUND, tileW, 4);
+
+    // Grid lines on ground
+    ctx.strokeStyle = 'rgba(0,212,255,0.15)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(sx, GROUND, tileW, C.height - GROUND);
+  }
+}
+
+function drawObstacles(gaps) {
+  for (const o of obstacles) {
+    const sx = worldToScreen(o.x);
+    if (sx > C.width + 100 || sx < -200) continue;
+
+    if (o.type === 'spike') {
+      const h = 30, w = 40;
+      const sy = o.y;
+      ctx.beginPath();
+      if (o.inverted) {
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(sx + w / 2, sy + h);
+        ctx.lineTo(sx + w, sy);
+      } else {
+        ctx.moveTo(sx, sy + h);
+        ctx.lineTo(sx + w / 2, sy);
+        ctx.lineTo(sx + w, sy + h);
+      }
+      ctx.closePath();
+      ctx.fillStyle = '#e94560';
+      ctx.fill();
+      ctx.strokeStyle = '#ff6b81';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Glow
+      ctx.shadowColor = '#e94560';
+      ctx.shadowBlur = 10;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    if (o.type === 'platform') {
+      const sx2 = worldToScreen(o.x);
+      ctx.fillStyle = '#0f3460';
+      ctx.fillRect(sx2, o.y, o.width, 12);
+      ctx.fillStyle = '#00d4ff';
+      ctx.fillRect(sx2, o.y, o.width, 3);
+    }
+  }
+}
+
+function drawPlayer() {
+  const sx = worldToScreen(px);
+  const sy = py;
+  const cx2 = sx + TILE / 2;
+  const cy = sy + TILE / 2;
+
+  ctx.save();
+  ctx.translate(cx2, cy);
+  ctx.rotate(rotation);
+
+  // Shadow
+  ctx.shadowColor = '#00d4ff';
+  ctx.shadowBlur = 20;
+
+  // Outer square
+  ctx.fillStyle = '#00d4ff';
+  ctx.fillRect(-TILE / 2, -TILE / 2, TILE, TILE);
+
+  // Inner details
+  ctx.fillStyle = '#0f3460';
+  ctx.fillRect(-TILE / 2 + 6, -TILE / 2 + 6, TILE - 12, TILE - 12);
+
+  // Center dot
+  ctx.fillStyle = '#00d4ff';
+  ctx.beginPath();
+  ctx.arc(0, 0, 5, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawDeathScreen() {
+  ctx.fillStyle = 'rgba(233,69,96,0.15)';
+  ctx.fillRect(0, 0, C.width, C.height);
+  ctx.fillStyle = '#e94560';
+  ctx.font = 'bold 60px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('DEAD', C.width / 2, C.height / 2 - 20);
+  ctx.font = '20px monospace';
+  ctx.fillStyle = '#aaa';
+  ctx.fillText(score + '%  •  best: ' + bestPct + '%', C.width / 2, C.height / 2 + 20);
+}
+
+function drawIdleScreen() {
+  ctx.fillStyle = '#00d4ff';
+  ctx.font = 'bold 48px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('GEO DASH', C.width / 2, C.height / 2 - 20);
+  ctx.font = '18px monospace';
+  ctx.fillStyle = '#aaa';
+  ctx.fillText('SPACE or CLICK to start', C.width / 2, C.height / 2 + 30);
+}
+
+function drawProgressBar() {
+  const barW = C.width - 40;
+  ctx.fillStyle = '#333';
+  ctx.fillRect(20, C.height - 16, barW, 6);
+  ctx.fillStyle = '#00d4ff';
+  ctx.shadowColor = '#00d4ff';
+  ctx.shadowBlur = 6;
+  ctx.fillRect(20, C.height - 16, barW * (score / 100), 6);
+  ctx.shadowBlur = 0;
+}
+
+function render() {
+  const gaps = getGapRanges();
+  drawBg();
+  drawGround(gaps);
+  drawObstacles(gaps);
+
+  if (state === 'playing' || state === 'dead') {
+    drawPlayer();
+  }
+  if (state === 'dead') drawDeathScreen();
+  if (state === 'idle') drawIdleScreen();
+
+  drawProgressBar();
+}
+
+function loop() {
+  update();
+  render();
+  requestAnimationFrame(loop);
+}
+
+// Init
+buildLevel();
+initPlayer();
+loop();
+</script>
+</body>
+</html>

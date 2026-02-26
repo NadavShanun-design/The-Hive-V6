@@ -1,0 +1,17 @@
+{
+  "name": "coder",
+  "version": "1.0.0",
+  "description": "Handles code generation, refactoring, and code analysis tasks.",
+  "main": "message-bridge.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "readline": "^1.3.0",
+    "ws": "^8.19.0"
+  }
+}

@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Bomberman</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: monospace; }
+h1 { color: #fff; margin-bottom: 10px; font-size: 24px; letter-spacing: 4px; }
+#hud { color: #fff; margin-bottom: 8px; font-size: 16px; display: flex; gap: 30px; }
+canvas { border: 3px solid #e94560; image-rendering: pixelated; }
+#msg { color: #e94560; font-size: 28px; margin-top: 16px; height: 36px; text-align: center; font-weight: bold; letter-spacing: 2px; }
+</style>
+</head>
+<body>
+<h1>BOMBERMAN</h1>
+<div id="hud">
+  <span>Lives: <span id="lives">3</span></span>
+  <span>Score: <span id="score">0</span></span>
+  <span>Level: <span id="level">1</span></span>
+</div>
+<canvas id="c"></canvas>
+<div id="msg"></div>
+<script>
+const TILE = 40;
+const COLS = 15;
+const ROWS = 13;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = COLS * TILE;
+canvas.height = ROWS * TILE;
+
+// Tile types
+const EMPTY = 0, WALL = 1, BLOCK = 2, BOMB_TILE = 3, FLAME = 4;
+
+let grid, player, enemies, bombs, flames, score, lives, level, gameState, animFrame;
+
+const DIRS = [[0,-1],[0,1],[-1,0],[1,0]];
+
+function initLevel(lvl) {
+  grid = [];
+  for (let r = 0; r < ROWS; r++) {
+    grid[r] = [];
+    for (let c = 0; c < COLS; c++) {
+      if (r === 0 || r === ROWS-1 || c === 0 || c === COLS-1) grid[r][c] = WALL;
+      else if (r % 2 === 0 && c % 2 === 0) grid[r][c] = WALL;
+      else grid[r][c] = EMPTY;
+    }
+  }
+  // Place breakable blocks randomly, avoid player start area
+  const density = 0.35 + lvl * 0.03;
+  for (let r = 1; r < ROWS-1; r++) {
+    for (let c = 1; c < COLS-1; c++) {
+      if (grid[r][c] === WALL) continue;
+      // Keep top-left corner free for player
+      if (r <= 2 && c <= 2) continue;
+      if (Math.random() < density) grid[r][c] = BLOCK;
+    }
+  }
+
+  player = { x: 1, y: 1, px: TILE, py: TILE, speed: 3, alive: true, bombRange: 2 + Math.floor(lvl/2), maxBombs: 1 + Math.floor(lvl/3), immune: 0 };
+  bombs = [];
+  flames = [];
+
+  // Enemies
+  const numEnemies = 3 + lvl * 2;
+  enemies = [];
+  let attempts = 0;
+  while (enemies.length < numEnemies && attempts < 1000) {
+    attempts++;
+    const ex = 1 + Math.floor(Math.random() * (COLS-2));
+    const ey = 1 + Math.floor(Math.random() * (ROWS-2));
+    if (grid[ey][ex] !== EMPTY) continue;
+    if (Math.abs(ex - 1) <= 3 && Math.abs(ey - 1) <= 3) continue;
+    enemies.push({ x: ex, y: ey, px: ex*TILE, py: ey*TILE, dir: Math.floor(Math.random()*4), moveTimer: 0, speed: 1 + Math.floor(lvl/3), alive: true });
+  }
+}
+
+function init() {
+  score = 0;
+  lives = 3;
+  level = 1;
+  gameState = 'playing';
+  initLevel(level);
+  document.getElementById('msg').textContent = '';
+}
+
+// Input
+const keys = {};
+document.addEventListener('keydown', e => {
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+  if (!keys[e.key]) {
+    keys[e.key] = true;
+    if (e.key === ' ') dropBomb();
+    if (gameState !== 'playing' && (e.key === 'Enter' || e.key === ' ')) {
+      if (gameState === 'dead') { lives = 3; score = 0; level = 1; gameState = 'playing'; initLevel(level); document.getElementById('msg').textContent = ''; }
+      else if (gameState === 'win') { level++; gameState = 'playing'; initLevel(level); document.getElementById('msg').textContent = ''; }
+    }
+  }
+  keys[e.key] = true;
+});
+document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+function dropBomb() {
+  if (gameState !== 'playing' || !player.alive) return;
+  const bx = Math.round((player.px) / TILE);
+  const by = Math.round((player.py) / TILE);
+  // Check if bomb already there
+  if (bombs.find(b => b.x === bx && b.y === by)) return;
+  const activeBombs = bombs.filter(b => !b.exploded).length;
+  if (activeBombs >= player.maxBombs) return;
+  bombs.push({ x: bx, y: by, timer: 150, exploded: false, range: player.bombRange });
+  grid[by][bx] = BOMB_TILE;
+}
+
+function explodeBomb(bomb) {
+  if (bomb.exploded) return;
+  bomb.exploded = true;
+  if (grid[bomb.y][bomb.x] === BOMB_TILE) grid[bomb.y][bomb.x] = EMPTY;
+  addFlame(bomb.x, bomb.y, 40);
+  for (const [dx,dy] of DIRS) {
+    for (let i = 1; i <= bomb.range; i++) {
+      const nx = bomb.x + dx*i, ny = bomb.y + dy*i;
+      if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) break;
+      if (grid[ny][nx] === WALL) break;
+      if (grid[ny][nx] === BLOCK) {
+        grid[ny][nx] = EMPTY;
+        addFlame(nx, ny, 35);
+        score += 10;
+        break;
+      }
+      if (grid[ny][nx] === BOMB_TILE) {
+        addFlame(nx, ny, 35);
+        const chain = bombs.find(b => b.x === nx && b.y === ny && !b.exploded);
+        if (chain) { chain.timer = 1; }
+        break;
+      }
+      addFlame(nx, ny, 35);
+    }
+  }
+}
+
+function addFlame(x, y, life) {
+  flames.push({ x, y, life, maxLife: life });
+}
+
+function update() {
+  if (gameState !== 'playing') return;
+
+  // Player movement
+  if (player.alive) {
+    let dx = 0, dy = 0;
+    if (keys['ArrowLeft']) dx = -1;
+    else if (keys['ArrowRight']) dx = 1;
+    else if (keys['ArrowUp']) dy = -1;
+    else if (keys['ArrowDown']) dy = 1;
+
+    if (dx !== 0 || dy !== 0) {
+      const spd = player.speed;
+      const npx = player.px + dx * spd;
+      const npy = player.py + dy * spd;
+
+      // Collision detection with tile-based grid (smooth movement)
+      const margin = 4;
+      if (canMove(npx, player.py, margin)) player.px = npx;
+      if (canMove(player.px, npy, margin)) player.py = npy;
+
+      player.x = Math.round(player.px / TILE);
+      player.y = Math.round(player.py / TILE);
+    }
+
+    // Player immune countdown
+    if (player.immune > 0) player.immune--;
+
+    // Check flame collision
+    if (player.immune === 0) {
+      const px = Math.round(player.px / TILE), py = Math.round(player.py / TILE);
+      if (flames.find(f => f.x === px && f.y === py)) {
+        playerHit();
+      }
+    }
+
+    // Check enemy collision
+    if (player.immune === 0) {
+      const px = player.px, py = player.py;
+      for (const e of enemies) {
+        if (!e.alive) continue;
+        if (Math.abs(e.px - px) < TILE*0.7 && Math.abs(e.py - py) < TILE*0.7) {
+          playerHit();
+          break;
+        }
+      }
+    }
+  }
+
+  // Bomb timers
+  for (const b of bombs) {
+    if (!b.exploded) {
+      b.timer--;
+      if (b.timer <= 0) explodeBomb(b);
+    }
+  }
+  bombs = bombs.filter(b => !b.exploded || flames.find(f => f.x === b.x && f.y === b.y));
+
+  // Flame timers
+  for (const f of flames) f.life--;
+  flames = flames.filter(f => f.life > 0);
+
+  // Enemy movement
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    e.moveTimer++;
+    const moveInterval = Math.max(6, 14 - e.speed);
+    if (e.moveTimer >= moveInterval) {
+      e.moveTimer = 0;
+      // Try to move in current direction, if blocked pick new
+      const [ddx, ddy] = DIRS[e.dir];
+      const nx = e.x + ddx, ny = e.y + ddy;
+      if (nx > 0 && ny > 0 && nx < COLS-1 && ny < ROWS-1 &&
+          grid[ny][nx] === EMPTY && !bombs.find(b => b.x === nx && b.y === ny)) {
+        e.x = nx; e.y = ny;
+        e.px = e.x * TILE; e.py = e.y * TILE;
+      } else {
+        // Pick random new direction
+        e.dir = Math.floor(Math.random() * 4);
+      }
+    }
+
+    // Check if enemy is in flame
+    if (flames.find(f => f.x === e.x && f.y === e.y)) {
+      e.alive = false;
+      score += 100;
+    }
+  }
+
+  enemies = enemies.filter(e => e.alive);
+
+  // Check win
+  if (enemies.length === 0) {
+    gameState = 'win';
+    document.getElementById('msg').textContent = `LEVEL CLEAR! Press ENTER`;
+  }
+
+  updateHUD();
+}
+
+function playerHit() {
+  lives--;
+  player.immune = 120;
+  if (lives <= 0) {
+    player.alive = false;
+    gameState = 'dead';
+    document.getElementById('msg').textContent = 'GAME OVER - Press ENTER';
+  } else {
+    // Respawn
+    player.px = TILE; player.py = TILE;
+    player.x = 1; player.y = 1;
+  }
+}
+
+function canMove(px, py, margin) {
+  // Check 4 corners of player hitbox
+  const corners = [
+    [px + margin, py + margin],
+    [px + TILE - margin, py + margin],
+    [px + margin, py + TILE - margin],
+    [px + TILE - margin, py + TILE - margin],
+  ];
+  for (const [cx, cy] of corners) {
+    const tx = Math.floor(cx / TILE), ty = Math.floor(cy / TILE);
+    if (tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS) return false;
+    const t = grid[ty][tx];
+    if (t === WALL || t === BLOCK) return false;
+    // Allow walking off bomb tile (if player placed it)
+    if (t === BOMB_TILE) {
+      const bx = Math.round(px / TILE), by = Math.round(py / TILE);
+      const bomb = bombs.find(b => b.x === tx && b.y === ty);
+      if (bomb) {
+        // Only block if player is not near bomb center
+        const origBx = bomb.x * TILE, origBy = bomb.y * TILE;
+        if (Math.abs(player.px - origBx) > TILE*0.55 || Math.abs(player.py - origBy) > TILE*0.55) return false;
+      }
+    }
+  }
+  return true;
+}
+
+function updateHUD() {
+  document.getElementById('lives').textContent = lives;
+  document.getElementById('score').textContent = score;
+  document.getElementById('level').textContent = level;
+}
+
+// Colors
+const COLORS = {
+  wall: '#16213e',
+  wallEdge: '#0f3460',
+  block: '#8b5e3c',
+  blockEdge: '#6b3f1f',
+  empty: '#2d5a27',
+  emptyDark: '#245022',
+  player: '#e94560',
+  playerEye: '#fff',
+  bomb: '#222',
+  bombFuse: '#f90',
+  flame: ['#ff4400','#ff6600','#ff8800','#ffaa00','#ffcc00'],
+  enemy: ['#9b59b6','#e74c3c','#3498db','#1abc9c'],
+};
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Draw grid
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const x = c * TILE, y = r * TILE;
+      const t = grid[r][c];
+      if (t === WALL) {
+        ctx.fillStyle = COLORS.wall;
+        ctx.fillRect(x, y, TILE, TILE);
+        ctx.fillStyle = COLORS.wallEdge;
+        ctx.fillRect(x+2, y+2, TILE-4, TILE-4);
+      } else if (t === BLOCK) {
+        ctx.fillStyle = COLORS.block;
+        ctx.fillRect(x, y, TILE, TILE);
+        ctx.fillStyle = COLORS.blockEdge;
+        ctx.fillRect(x+3, y+3, TILE-6, TILE-6);
+        // X pattern
+        ctx.strokeStyle = '#7a4a2a';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x+6,y+6); ctx.lineTo(x+TILE-6,y+TILE-6); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x+TILE-6,y+6); ctx.lineTo(x+6,y+TILE-6); ctx.stroke();
+      } else {
+        // Checkerboard floor
+        ctx.fillStyle = (r+c)%2===0 ? COLORS.empty : COLORS.emptyDark;
+        ctx.fillRect(x, y, TILE, TILE);
+      }
+    }
+  }
+
+  // Draw flames
+  for (const f of flames) {
+    const t = f.life / f.maxLife;
+    const ci = Math.floor((1-t) * (COLORS.flame.length-1));
+    ctx.globalAlpha = t * 0.9 + 0.1;
+    ctx.fillStyle = COLORS.flame[ci];
+    const s = TILE * (0.5 + t * 0.5);
+    const off = (TILE - s) / 2;
+    ctx.fillRect(f.x*TILE + off, f.y*TILE + off, s, s);
+    ctx.globalAlpha = 1;
+  }
+
+  // Draw bombs
+  for (const b of bombs) {
+    if (b.exploded) continue;
+    const x = b.x * TILE, y = b.y * TILE;
+    const pulse = 1 + Math.sin(b.timer * 0.2) * 0.08;
+    const r = TILE * 0.35 * pulse;
+    ctx.fillStyle = COLORS.bomb;
+    ctx.beginPath();
+    ctx.arc(x + TILE/2, y + TILE/2, r, 0, Math.PI*2);
+    ctx.fill();
+    // Fuse
+    ctx.strokeStyle = COLORS.bombFuse;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x + TILE/2, y + TILE/2 - r);
+    ctx.quadraticCurveTo(x + TILE/2 + 8, y + TILE/2 - r - 10, x + TILE/2 + 5, y + TILE/2 - r - 14);
+    ctx.stroke();
+    // Spark
+    if (b.timer % 10 < 5) {
+      ctx.fillStyle = '#ff0';
+      ctx.beginPath();
+      ctx.arc(x + TILE/2 + 5, y + TILE/2 - r - 14, 3, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  // Draw enemies
+  for (let i = 0; i < enemies.length; i++) {
+    const e = enemies[i];
+    if (!e.alive) continue;
+    const x = e.px, y = e.py;
+    const color = COLORS.enemy[i % COLORS.enemy.length];
+    // Body
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x + TILE/2, y + TILE/2, TILE*0.38, 0, Math.PI*2);
+    ctx.fill();
+    // Eyes
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(x + TILE*0.35, y + TILE*0.4, 5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + TILE*0.65, y + TILE*0.4, 5, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(x + TILE*0.36, y + TILE*0.42, 2.5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + TILE*0.66, y + TILE*0.42, 2.5, 0, Math.PI*2); ctx.fill();
+    // Angry brow
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x+TILE*0.28,y+TILE*0.32); ctx.lineTo(x+TILE*0.44,y+TILE*0.36); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x+TILE*0.72,y+TILE*0.32); ctx.lineTo(x+TILE*0.56,y+TILE*0.36); ctx.stroke();
+  }
+
+  // Draw player
+  if (player.alive) {
+    const x = player.px, y = player.py;
+    const blink = player.immune > 0 && Math.floor(player.immune / 6) % 2 === 0;
+    if (!blink) {
+      // Body
+      ctx.fillStyle = COLORS.player;
+      ctx.beginPath();
+      ctx.arc(x + TILE/2, y + TILE/2 + 2, TILE*0.36, 0, Math.PI*2);
+      ctx.fill();
+      // Head
+      ctx.fillStyle = '#f5cba7';
+      ctx.beginPath();
+      ctx.arc(x + TILE/2, y + TILE*0.35, TILE*0.22, 0, Math.PI*2);
+      ctx.fill();
+      // Eyes
+      ctx.fillStyle = '#222';
+      ctx.beginPath(); ctx.arc(x + TILE*0.43, y + TILE*0.33, 2.5, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x + TILE*0.57, y + TILE*0.33, 2.5, 0, Math.PI*2); ctx.fill();
+      // Helmet
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(x + TILE*0.32, y + TILE*0.18, TILE*0.36, TILE*0.1);
+    }
+  }
+
+  // Game state overlays
+  if (gameState === 'dead' || gameState === 'win') {
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  animFrame = requestAnimationFrame(loop);
+}
+
+init();
+loop();
+</script>
+</body>
+</html>

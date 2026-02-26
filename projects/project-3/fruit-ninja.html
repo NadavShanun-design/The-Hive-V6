@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Fruit Ninja</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a0a00; overflow: hidden; font-family: Arial, sans-serif; cursor: none; }
+canvas { display: block; }
+#ui { position: fixed; top: 0; left: 0; width: 100%; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; pointer-events: none; z-index: 10; }
+#score { color: #fff; font-size: 32px; font-weight: bold; text-shadow: 0 0 10px rgba(255,200,0,0.8); }
+#lives { display: flex; gap: 8px; }
+.life { width: 30px; height: 30px; background: radial-gradient(circle, #ff4444, #aa0000); border-radius: 50%; box-shadow: 0 0 8px rgba(255,0,0,0.6); }
+.life.lost { background: radial-gradient(circle, #444, #222); box-shadow: none; }
+#overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 20; }
+#overlay h1 { color: #ff6600; font-size: 72px; text-shadow: 0 0 30px rgba(255,100,0,0.8); margin-bottom: 20px; }
+#overlay .sub { color: #ffcc00; font-size: 28px; margin-bottom: 10px; }
+#overlay .final { color: #fff; font-size: 22px; margin-bottom: 40px; }
+#overlay button { background: linear-gradient(135deg, #ff6600, #ff3300); color: #fff; border: none; padding: 15px 50px; font-size: 24px; border-radius: 50px; cursor: pointer; box-shadow: 0 0 20px rgba(255,100,0,0.6); transition: transform 0.1s; }
+#overlay button:hover { transform: scale(1.05); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="score">0</div>
+  <div id="lives">
+    <div class="life" id="l1"></div>
+    <div class="life" id="l2"></div>
+    <div class="life" id="l3"></div>
+  </div>
+</div>
+<div id="overlay">
+  <h1>FRUIT NINJA</h1>
+  <div class="sub">Slice the fruits!</div>
+  <div class="final">Miss 3 = Game Over</div>
+  <button id="startBtn">PLAY</button>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+const scoreEl = document.getElementById('score');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const FRUITS = [
+  { name:'watermelon', color:'#2d8a2d', inner:'#e83030', r:38 },
+  { name:'orange',     color:'#e87a10', inner:'#ffcc44', r:30 },
+  { name:'apple',      color:'#cc2222', inner:'#ff9999', r:28 },
+  { name:'lemon',      color:'#e8d020', inner:'#fff176', r:25 },
+  { name:'grape',      color:'#7030a0', inner:'#cc88ff', r:22 },
+  { name:'peach',      color:'#ff9966', inner:'#ffddbb', r:28 },
+  { name:'kiwi',       color:'#3a6e1e', inner:'#a8d060', r:26 },
+];
+
+let fruits = [], slices = [], particles = [], blade = [];
+let score = 0, lives = 3, gameActive = false, spawnTimer = 0, spawnInterval = 80, difficulty = 0;
+let mouse = { x: -200, y: -200 };
+
+class Fruit {
+  constructor() {
+    const f = FRUITS[Math.floor(Math.random() * FRUITS.length)];
+    this.r = f.r + Math.random() * 8;
+    this.x = this.r + Math.random() * (W - this.r * 2);
+    this.y = H + this.r;
+    const speed = 14 + Math.random() * 8 + difficulty * 0.5;
+    const angle = (Math.random() - 0.5) * 0.8;
+    this.vx = Math.sin(angle) * speed * 0.4;
+    this.vy = -speed;
+    this.color = f.color;
+    this.inner = f.inner;
+    this.rot = Math.random() * Math.PI * 2;
+    this.spin = (Math.random() - 0.5) * 0.12;
+    this.sliced = false;
+    this.missed = false;
+    this.highlight = `rgba(255,255,255,0.35)`;
+  }
+  update() {
+    this.vy += 0.45;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.rot += this.spin;
+    if (this.y > H + this.r * 2) {
+      if (!this.sliced && !this.missed) {
+        this.missed = true;
+        return 'missed';
+      }
+      return 'dead';
+    }
+    return null;
+  }
+  draw() {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rot);
+    // shadow
+    ctx.beginPath();
+    ctx.ellipse(4, 6, this.r, this.r * 0.9, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fill();
+    // fruit body
+    ctx.beginPath();
+    ctx.arc(0, 0, this.r, 0, Math.PI * 2);
+    ctx.fillStyle = this.color;
+    ctx.fill();
+    // shine
+    ctx.beginPath();
+    ctx.ellipse(-this.r * 0.25, -this.r * 0.3, this.r * 0.35, this.r * 0.22, -0.5, 0, Math.PI * 2);
+    ctx.fillStyle = this.highlight;
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+class SlicedHalf {
+  constructor(fruit, side) {
+    this.x = fruit.x; this.y = fruit.y;
+    this.r = fruit.r;
+    this.color = fruit.color;
+    this.inner = fruit.inner;
+    this.rot = fruit.rot;
+    this.side = side;
+    this.vx = fruit.vx + (side === 'l' ? -3 : 3);
+    this.vy = fruit.vy - 2;
+    this.spin = fruit.spin + (side === 'l' ? -0.1 : 0.1);
+    this.alpha = 1;
+    this.life = 60;
+  }
+  update() {
+    this.vy += 0.5;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.rot += this.spin;
+    this.life--;
+    if (this.life < 20) this.alpha = this.life / 20;
+    return this.life <= 0 ? 'dead' : null;
+  }
+  draw() {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rot);
+    ctx.globalAlpha = this.alpha;
+    const sign = this.side === 'l' ? 1 : -1;
+    ctx.beginPath();
+    ctx.arc(0, 0, this.r, Math.PI * 0.5 * sign, Math.PI * 1.5 * sign, this.side === 'l');
+    ctx.lineTo(0, 0);
+    ctx.fillStyle = this.color;
+    ctx.fill();
+    // inner
+    ctx.beginPath();
+    ctx.arc(0, 0, this.r * 0.72, Math.PI * 0.5 * sign, Math.PI * 1.5 * sign, this.side === 'l');
+    ctx.lineTo(0, 0);
+    ctx.fillStyle = this.inner;
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+class Particle {
+  constructor(x, y, color) {
+    this.x = x; this.y = y;
+    this.color = color;
+    this.vx = (Math.random() - 0.5) * 8;
+    this.vy = (Math.random() - 0.5) * 8 - 3;
+    this.r = 2 + Math.random() * 5;
+    this.life = 30 + Math.random() * 20;
+    this.maxLife = this.life;
+    this.alpha = 1;
+  }
+  update() {
+    this.vy += 0.3;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life--;
+    this.alpha = this.life / this.maxLife;
+    return this.life <= 0 ? 'dead' : null;
+  }
+  draw() {
+    ctx.save();
+    ctx.globalAlpha = this.alpha;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.fillStyle = this.color;
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function spawnFruit() {
+  fruits.push(new Fruit());
+  // sometimes spawn 2
+  if (Math.random() < 0.3 + difficulty * 0.02) {
+    setTimeout(() => { if (gameActive) fruits.push(new Fruit()); }, 120);
+  }
+}
+
+function sliceFruit(f) {
+  f.sliced = true;
+  score++;
+  scoreEl.textContent = score;
+  slices.push(new SlicedHalf(f, 'l'));
+  slices.push(new SlicedHalf(f, 'r'));
+  for (let i = 0; i < 12; i++) particles.push(new Particle(f.x, f.y, f.inner));
+  for (let i = 0; i < 6; i++) particles.push(new Particle(f.x, f.y, f.color));
+}
+
+function loseLife() {
+  lives--;
+  const lifeEl = document.getElementById(`l${lives + 1}`);
+  if (lifeEl) lifeEl.classList.add('lost');
+  // flash red
+  canvas.style.boxShadow = '0 0 0 6px red inset';
+  setTimeout(() => canvas.style.boxShadow = '', 300);
+  if (lives <= 0) endGame();
+}
+
+function endGame() {
+  gameActive = false;
+  overlay.innerHTML = `
+    <h1>GAME OVER</h1>
+    <div class="sub">Final Score</div>
+    <div class="final" style="font-size:48px;color:#ffcc00;margin-bottom:20px;">${score}</div>
+    <button id="startBtn">PLAY AGAIN</button>
+  `;
+  overlay.style.display = 'flex';
+  document.getElementById('startBtn').addEventListener('click', startGame);
+}
+
+function startGame() {
+  fruits = []; slices = []; particles = []; blade = [];
+  score = 0; lives = 3; gameActive = true; spawnTimer = 0; spawnInterval = 80; difficulty = 0;
+  scoreEl.textContent = '0';
+  ['l1','l2','l3'].forEach(id => document.getElementById(id)?.classList.remove('lost'));
+  overlay.style.display = 'none';
+}
+
+// Blade trail
+let prevMouse = { x: -200, y: -200 };
+document.addEventListener('mousemove', e => {
+  prevMouse = { ...mouse };
+  mouse.x = e.clientX; mouse.y = e.clientY;
+  if (gameActive) {
+    blade.push({ x: mouse.x, y: mouse.y, t: Date.now() });
+    if (blade.length > 16) blade.shift();
+    checkSlice(prevMouse, mouse);
+  }
+});
+
+// Touch support
+document.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  prevMouse = { ...mouse };
+  mouse.x = t.clientX; mouse.y = t.clientY;
+  if (gameActive) {
+    blade.push({ x: mouse.x, y: mouse.y, t: Date.now() });
+    if (blade.length > 16) blade.shift();
+    checkSlice(prevMouse, mouse);
+  }
+}, { passive: false });
+
+function checkSlice(a, b) {
+  fruits.forEach(f => {
+    if (f.sliced) return;
+    // segment-circle intersection
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const fx = a.x - f.x, fy = a.y - f.y;
+    const len2 = dx*dx + dy*dy;
+    if (len2 === 0) return;
+    let t = -(fx*dx + fy*dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const nx = fx + t*dx, ny = fy + t*dy;
+    if (nx*nx + ny*ny < f.r * f.r) sliceFruit(f);
+  });
+}
+
+function drawBackground() {
+  ctx.fillStyle = '#0d0500';
+  ctx.fillRect(0, 0, W, H);
+  // subtle vignette
+  const g = ctx.createRadialGradient(W/2, H/2, H*0.3, W/2, H/2, H*0.9);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.5)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function drawBlade() {
+  if (blade.length < 2) return;
+  const now = Date.now();
+  for (let i = 1; i < blade.length; i++) {
+    const age = (now - blade[i].t) / 120;
+    if (age > 1) continue;
+    const alpha = (1 - age) * 0.85;
+    const width = (1 - age) * 4 + 1;
+    ctx.beginPath();
+    ctx.moveTo(blade[i-1].x, blade[i-1].y);
+    ctx.lineTo(blade[i].x, blade[i].y);
+    ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+  }
+  // glow
+  if (blade.length > 2) {
+    ctx.beginPath();
+    ctx.moveTo(blade[blade.length-2].x, blade[blade.length-2].y);
+    ctx.lineTo(blade[blade.length-1].x, blade[blade.length-1].y);
+    ctx.strokeStyle = 'rgba(200,240,255,0.6)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  // cursor dot
+  ctx.beginPath();
+  ctx.arc(mouse.x, mouse.y, 4, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fill();
+}
+
+function drawMissX(f) {
+  // draw an X where a fruit was missed
+}
+
+let missFlashes = [];
+
+function loop() {
+  requestAnimationFrame(loop);
+  drawBackground();
+
+  if (gameActive) {
+    spawnTimer++;
+    if (spawnTimer >= spawnInterval) {
+      spawnTimer = 0;
+      spawnFruit();
+      difficulty += 0.5;
+      spawnInterval = Math.max(30, 80 - difficulty);
+    }
+
+    // update fruits
+    fruits = fruits.filter(f => {
+      const r = f.update();
+      if (r === 'missed') { loseLife(); return false; }
+      if (r === 'dead') return false;
+      return true;
+    });
+
+    slices = slices.filter(s => s.update() !== 'dead');
+    particles = particles.filter(p => p.update() !== 'dead');
+  }
+
+  // draw
+  particles.forEach(p => p.draw());
+  slices.forEach(s => s.draw());
+  fruits.forEach(f => f.draw());
+  drawBlade();
+}
+
+startBtn.addEventListener('click', startGame);
+loop();
+</script>
+</body>
+</html>

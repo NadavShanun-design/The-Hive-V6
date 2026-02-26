@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Flappy Bird</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; }
+canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+c.width = 400; c.height = 600;
+
+let bird, pipes, score, state, frame;
+
+function init() {
+  bird = { x: 80, y: 300, vy: 0, r: 16 };
+  pipes = [];
+  score = 0;
+  state = 'waiting';
+  frame = 0;
+}
+
+function flap() {
+  if (state === 'dead') { init(); return; }
+  if (state === 'waiting') state = 'playing';
+  bird.vy = -8;
+}
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); flap(); }
+});
+c.addEventListener('click', flap);
+
+const GAP = 150;
+const PIPE_W = 60;
+const SPEED = 3;
+
+function spawnPipe() {
+  const top = 80 + Math.random() * (c.height - GAP - 160);
+  pipes.push({ x: c.width, top });
+}
+
+function update() {
+  if (state !== 'playing') return;
+  frame++;
+  bird.vy += 0.45;
+  bird.y += bird.vy;
+  if (frame % 90 === 0) spawnPipe();
+  for (let p of pipes) p.x -= SPEED;
+  pipes = pipes.filter(p => p.x > -PIPE_W);
+  for (let p of pipes) {
+    if (!p.scored && p.x + PIPE_W < bird.x) { p.scored = true; score++; }
+  }
+  if (bird.y + bird.r > c.height || bird.y - bird.r < 0) { state = 'dead'; return; }
+  for (let p of pipes) {
+    if (bird.x + bird.r > p.x && bird.x - bird.r < p.x + PIPE_W) {
+      if (bird.y - bird.r < p.top || bird.y + bird.r > p.top + GAP) { state = 'dead'; return; }
+    }
+  }
+}
+
+function drawBird() {
+  ctx.fillStyle = '#f5c542';
+  ctx.beginPath(); ctx.arc(bird.x, bird.y, bird.r, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(bird.x+6, bird.y-4, 5, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#222';
+  ctx.beginPath(); ctx.arc(bird.x+7, bird.y-4, 2.5, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#f90';
+  ctx.beginPath(); ctx.moveTo(bird.x+14,bird.y+1); ctx.lineTo(bird.x+22,bird.y-2); ctx.lineTo(bird.x+14,bird.y+5); ctx.fill();
+  ctx.fillStyle = '#e6b020';
+  ctx.beginPath(); ctx.ellipse(bird.x-4, bird.y+4, 9, 5, -0.3, 0, Math.PI*2); ctx.fill();
+}
+
+function drawPipe(p) {
+  const g = ctx.createLinearGradient(p.x,0,p.x+PIPE_W,0);
+  g.addColorStop(0,'#3a9e3a'); g.addColorStop(0.5,'#5fd65f'); g.addColorStop(1,'#2a7e2a');
+  ctx.fillStyle = g;
+  ctx.fillRect(p.x, 0, PIPE_W, p.top);
+  ctx.fillRect(p.x-5, p.top-20, PIPE_W+10, 20);
+  const by = p.top + GAP;
+  ctx.fillRect(p.x, by, PIPE_W, c.height-by);
+  ctx.fillRect(p.x-5, by, PIPE_W+10, 20);
+}
+
+function draw() {
+  const sky = ctx.createLinearGradient(0,0,0,c.height);
+  sky.addColorStop(0,'#70c5ce'); sky.addColorStop(1,'#b8e4ea');
+  ctx.fillStyle = sky; ctx.fillRect(0,0,c.width,c.height);
+  ctx.fillStyle = '#ded895'; ctx.fillRect(0,c.height-40,c.width,40);
+  ctx.fillStyle = '#5ab552'; ctx.fillRect(0,c.height-45,c.width,10);
+  for (let p of pipes) drawPipe(p);
+  ctx.save();
+  if (state === 'dead') { ctx.translate(bird.x,bird.y); ctx.rotate(Math.min(bird.vy*0.07,1.2)); ctx.translate(-bird.x,-bird.y); }
+  drawBird();
+  ctx.restore();
+  ctx.fillStyle='#fff'; ctx.strokeStyle='#333'; ctx.lineWidth=3; ctx.font='bold 40px Arial'; ctx.textAlign='center';
+  ctx.strokeText(score,c.width/2,60); ctx.fillText(score,c.width/2,60);
+  if (state==='waiting') {
+    ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fillRect(0,0,c.width,c.height);
+    ctx.fillStyle='#fff'; ctx.font='bold 36px Arial'; ctx.fillText('FLAPPY BIRD',c.width/2,220);
+    ctx.font='20px Arial'; ctx.fillText('Press SPACE or click to start',c.width/2,270);
+  }
+  if (state==='dead') {
+    ctx.fillStyle='rgba(0,0,0,0.45)'; ctx.fillRect(0,0,c.width,c.height);
+    ctx.fillStyle='#fff'; ctx.font='bold 36px Arial'; ctx.fillText('GAME OVER',c.width/2,230);
+    ctx.font='24px Arial'; ctx.fillText('Score: '+score,c.width/2,275);
+    ctx.font='18px Arial'; ctx.fillText('Press SPACE or click to restart',c.width/2,320);
+  }
+}
+
+function loop() { update(); draw(); requestAnimationFrame(loop); }
+init(); loop();
+</script>
+</body>
+</html>

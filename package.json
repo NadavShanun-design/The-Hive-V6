@@ -1,0 +1,23 @@
+{
+  "name": "vibe-coder-hive",
+  "version": "2.0.0",
+  "description": "THE HIVE - Multi-agent Claude Code CLI orchestration system with 3 project batches",
+  "main": "server-hive.js",
+  "scripts": {
+    "dev": "node server.js",
+    "hive": "node server-hive.js",
+    "start": "node server-hive.js",
+    "legacy": "node server.js",
+    "build": "echo 'No build needed for node server'"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.72.1",
+    "express": "^4.18.2",
+    "node-pty": "^1.0.0",
+    "openclaw": "^2026.2.15",
+    "ws": "^8.16.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

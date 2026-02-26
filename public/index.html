@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🐝 THE HIVE - Multi-Agent Command Center</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-dark: #0a0a0a;
+            --bg-darker: #050505;
+            --neon-green: #00ff41;
+            --neon-blue: #00d4ff;
+            --neon-pink: #ff006e;
+            --neon-yellow: #ffbe0b;
+            --border-color: #1a1a1a;
+            --text-dim: #666;
+            --text-bright: #e0e0e0;
+        }
+
+        body {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-darker);
+            color: var(--text-bright);
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* Cyberpunk grid background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image:
+                linear-gradient(rgba(0, 255, 65, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 65, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            background: var(--bg-dark);
+            border-bottom: 2px solid var(--neon-green);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.3);
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--neon-green);
+            text-shadow: 0 0 10px var(--neon-green);
+        }
+
+        .nav-btn {
+            background: transparent;
+            border: 1px solid var(--neon-blue);
+            color: var(--neon-blue);
+            padding: 0.5rem 1rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.3s;
+            text-decoration: none;
+        }
+
+        .nav-btn:hover {
+            background: var(--neon-blue);
+            color: var(--bg-dark);
+            box-shadow: 0 0 15px rgba(0, 212, 255, 0.5);
+        }
+
+        .status {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.85rem;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--neon-green);
+            box-shadow: 0 0 5px var(--neon-green);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Quick Ideas Bar */
+        .quick-ideas {
+            background: var(--bg-dark);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+        }
+
+        .quick-ideas-title {
+            font-size: 0.85rem;
+            color: var(--neon-blue);
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .quick-ideas-input-row {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .quick-ideas-input {
+            flex: 1;
+            background: var(--bg-darker);
+            border: 1px solid var(--neon-blue);
+            color: var(--text-bright);
+            padding: 0.75rem 1rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        .quick-ideas-input:focus {
+            border-color: var(--neon-green);
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+        }
+
+        .quick-ideas-btn {
+            background: var(--neon-blue);
+            color: var(--bg-dark);
+            border: none;
+            padding: 0.75rem 1.5rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+        }
+
+        .quick-ideas-btn:hover {
+            background: var(--neon-green);
+            box-shadow: 0 0 15px var(--neon-green);
+        }
+
+        /* Main Grid */
+        .main-grid {
+            flex: 1;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1px;
+            background: var(--border-color);
+            overflow: hidden;
+        }
+
+        /* Project Batch Column */
+        .project-batch {
+            background: var(--bg-dark);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .project-header {
+            background: var(--bg-darker);
+            padding: 0.75rem 1rem;
+            border-bottom: 2px solid var(--neon-green);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .project-batch:nth-child(2) .project-header {
+            border-color: var(--neon-blue);
+        }
+
+        .project-batch:nth-child(3) .project-header {
+            border-color: var(--neon-pink);
+        }
+
+        .project-batch:nth-child(4) .project-header {
+            border-color: var(--neon-yellow);
+        }
+
+        .project-title {
+            font-size: 0.9rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .project-batch:nth-child(1) .project-title { color: var(--neon-green); }
+        .project-batch:nth-child(2) .project-title { color: var(--neon-blue); }
+        .project-batch:nth-child(3) .project-title { color: var(--neon-pink); }
+        .project-batch:nth-child(4) .project-title { color: var(--neon-yellow); }
+
+        .project-workspace {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+        }
+
+        /* Terminal Container */
+        .terminals-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .terminal-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-bottom: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+
+        .terminal-wrapper:last-child {
+            border-bottom: none;
+        }
+
+        .terminal-title {
+            background: var(--bg-darker);
+            padding: 0.5rem 1rem;
+            font-size: 0.75rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .terminal-label {
+            background: transparent;
+            border: none;
+            border-bottom: 1px solid transparent;
+            color: var(--text-dim);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            padding: 0 4px;
+            width: 80px;
+            outline: none;
+            margin-left: 6px;
+            transition: all 0.3s;
+        }
+
+        .terminal-label:hover {
+            border-bottom-color: var(--border-color);
+        }
+
+        .terminal-label:focus {
+            border-bottom-color: var(--neon-green);
+            color: var(--text-bright);
+        }
+
+        .terminal-label::placeholder {
+            color: #333;
+            font-style: italic;
+        }
+
+        .terminal-role {
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .terminal-number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            height: 22px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            margin-right: 6px;
+            flex-shrink: 0;
+        }
+
+        .terminal-number-green {
+            background: var(--neon-green);
+            color: var(--bg-dark);
+            box-shadow: 0 0 6px var(--neon-green);
+        }
+
+        .terminal-number-blue {
+            background: var(--neon-blue);
+            color: var(--bg-dark);
+            box-shadow: 0 0 6px var(--neon-blue);
+        }
+
+        .terminal-number-pink {
+            background: var(--neon-pink);
+            color: var(--bg-dark);
+            box-shadow: 0 0 6px var(--neon-pink);
+        }
+
+        .terminal-number-yellow {
+            background: var(--neon-yellow);
+            color: var(--bg-dark);
+            box-shadow: 0 0 6px var(--neon-yellow);
+        }
+
+        .master-role { color: var(--neon-green); }
+        .coder-role { color: var(--neon-blue); }
+
+        .terminal-status {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+        }
+
+        .terminal {
+            flex: 1;
+            background: var(--bg-darker);
+            padding: 0.5rem;
+            overflow: hidden;
+        }
+
+        /* MOLTBOT Panel */
+        .moltbot-panel {
+            background: var(--bg-dark);
+            display: flex;
+            flex-direction: column;
+            min-height: 0; /* Important for flexbox scrolling */
+            overflow: hidden; /* Prevent overflow */
+        }
+
+        .moltbot-header {
+            background: var(--bg-darker);
+            padding: 0.75rem 1rem;
+            border-bottom: 2px solid var(--neon-yellow);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .moltbot-title {
+            font-size: 0.9rem;
+            font-weight: bold;
+            color: var(--neon-yellow);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .moltbot-chat {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0; /* Important for flexbox scrolling */
+        }
+
+        .moltbot-messages {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            min-height: 0; /* Important for flexbox scrolling */
+        }
+
+        .moltbot-message {
+            padding: 0.75rem;
+            background: var(--bg-darker);
+            border-left: 3px solid var(--neon-yellow);
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+
+        .moltbot-message-user {
+            border-left-color: var(--neon-blue);
+        }
+
+        .moltbot-message-header {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            margin-bottom: 0.5rem;
+        }
+
+        /* Loading dots animation */
+        .loading-dots {
+            display: inline-flex;
+            gap: 0.2rem;
+            align-items: center;
+        }
+
+        .loading-dots span {
+            animation: loading-dot 1.4s infinite;
+            opacity: 0.3;
+            font-size: 1.5rem;
+            line-height: 1;
+        }
+
+        .loading-dots span:nth-child(1) {
+            animation-delay: 0s;
+        }
+
+        .loading-dots span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .loading-dots span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes loading-dot {
+            0%, 60%, 100% {
+                opacity: 0.3;
+            }
+            30% {
+                opacity: 1;
+            }
+        }
+
+        .moltbot-input-container {
+            flex-shrink: 0; /* Never shrink, always keep full height */
+            padding: 1rem;
+            background: var(--bg-darker);
+            border-top: 1px solid var(--border-color);
+        }
+
+        .moltbot-input {
+            width: 100%;
+            background: var(--bg-dark);
+            border: 1px solid var(--neon-yellow);
+            color: var(--text-bright);
+            padding: 0.75rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            outline: none;
+            resize: vertical;
+            min-height: 60px;
+        }
+
+        .moltbot-input:focus {
+            border-color: var(--neon-green);
+            box-shadow: 0 0 10px rgba(255, 190, 11, 0.3);
+        }
+
+        .moltbot-send-btn {
+            margin-top: 0.5rem;
+            width: 100%;
+            background: var(--neon-yellow);
+            color: var(--bg-dark);
+            border: none;
+            padding: 0.75rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: all 0.3s;
+        }
+
+        .moltbot-send-btn:hover {
+            background: var(--neon-green);
+            box-shadow: 0 0 15px var(--neon-green);
+        }
+
+        /* Shared Context Panel */
+        .shared-context {
+            background: var(--bg-darker);
+            border-top: 1px solid var(--border-color);
+            max-height: 150px;
+            overflow-y: auto;
+            padding: 0.5rem;
+        }
+
+        .shared-context-title {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+        }
+
+        .file-list {
+            font-size: 0.7rem;
+            list-style: none;
+        }
+
+        .file-list li {
+            padding: 0.25rem;
+            color: var(--text-dim);
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-darker);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--neon-green);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--neon-blue);
+        }
+
+        /* Loading animation */
+        .loading {
+            display: inline-block;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">🐝 THE HIVE</div>
+            <button class="nav-btn" onclick="window.open('/goals.html', '_blank')">MEMORY & TASKS</button>
+            <div class="status">
+                <div class="status-item">
+                    <div class="status-dot"></div>
+                    <span id="terminal-count">0/6 terminals</span>
+                </div>
+                <div class="status-item">
+                    <div class="status-dot" style="background: var(--neon-blue);"></div>
+                    <span id="moltbot-status">MOLTBOT ready</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Ideas Bar -->
+        <div class="quick-ideas">
+            <div class="quick-ideas-title">💡 Quick Ideas</div>
+            <div class="quick-ideas-input-row">
+                <input
+                    type="text"
+                    class="quick-ideas-input"
+                    id="quick-idea-input"
+                    placeholder="Type your idea here... (or use Whisper on your laptop for voice input)"
+                />
+                <button class="quick-ideas-btn" onclick="saveQuickIdea()">Save Idea</button>
+                <select class="quick-ideas-btn" id="idea-target" style="background: var(--bg-darker); color: var(--text-bright);">
+                    <option value="">Send to...</option>
+                    <option value="project1-master">T1 - P1 Master</option>
+                    <option value="project1-coder">T2 - P1 Coder</option>
+                    <option value="project2-master">T3 - P2 Master</option>
+                    <option value="project2-coder">T4 - P2 Coder</option>
+                    <option value="project3-master">T5 - P3 Master</option>
+                    <option value="project3-coder">T6 - P3 Coder</option>
+                    <option value="moltbot">T7 - MOLTBOT</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Main Grid: 3 Project Batches + MOLTBOT -->
+        <div class="main-grid">
+            <!-- Project 1 -->
+            <div class="project-batch">
+                <div class="project-header">
+                    <div>
+                        <div class="project-title">Project 1</div>
+                        <div class="project-workspace">./projects/project-1</div>
+                    </div>
+                </div>
+                <div class="terminals-container">
+                    <div class="terminal-wrapper">
+                        <div class="terminal-title">
+                            <span style="display:flex;align-items:center;"><span class="terminal-number terminal-number-green">T1</span><span class="terminal-role master-role">MASTER</span><input type="text" class="terminal-label" placeholder="label..." /></span>
+                            <span class="terminal-status" id="status-project1-master">Connecting<span class="loading">...</span></span>
+                        </div>
+                        <div class="terminal" id="terminal-project1-master"></div>
+                    </div>
+                    <div class="terminal-wrapper">
+                        <div class="terminal-title">
+                            <span style="display:flex;align-items:center;"><span class="terminal-number terminal-number-green">T2</span><span class="terminal-role coder-role">CODER</span><input type="text" class="terminal-label" placeholder="label..." /></span>
+                            <span class="terminal-status" id="status-project1-coder">Connecting<span class="loading">...</span></span>
+                        </div>
+                        <div class="terminal" id="terminal-project1-coder"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Project 2 -->
+            <div class="project-batch">
+                <div class="project-header">
+                    <div>
+                        <div class="project-title">Project 2</div>
+                        <div class="project-workspace">./projects/project-2</div>
+                    </div>
+                </div>
+                <div class="terminals-container">
+                    <div class="terminal-wrapper">
+                        <div class="terminal-title">
+                            <span style="display:flex;align-items:center;"><span class="terminal-number terminal-number-blue">T3</span><span class="terminal-role master-role">MASTER</span><input type="text" class="terminal-label" placeholder="label..." /></span>
+                            <span class="terminal-status" id="status-project2-master">Connecting<span class="loading">...</span></span>
+                        </div>
+                        <div class="terminal" id="terminal-project2-master"></div>
+                    </div>
+                    <div class="terminal-wrapper">
+                        <div class="terminal-title">
+                            <span style="display:flex;align-items:center;"><span class="terminal-number terminal-number-blue">T4</span><span class="terminal-role coder-role">CODER</span><input type="text" class="terminal-label" placeholder="label..." /></span>
+                            <span class="terminal-status" id="status-project2-coder">Connecting<span class="loading">...</span></span>
+                        </div>
+                        <div class="terminal" id="terminal-project2-coder"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Project 3 -->
+            <div class="project-batch">
+                <div class="project-header">
+                    <div>
+                        <div class="project-title">Project 3</div>
+                        <div class="project-workspace">./projects/project-3</div>
+                    </div>
+                </div>
+                <div class="terminals-container">
+                    <div class="terminal-wrapper">
+                        <div class="terminal-title">
+                            <span style="display:flex;align-items:center;"><span class="terminal-number terminal-number-pink">T5</span><span class="terminal-role master-role">MASTER</span><input type="text" class="terminal-label" placeholder="label..." /></span>
+                            <span class="terminal-status" id="status-project3-master">Connecting<span class="loading">...</span></span>
+                        </div>
+                        <div class="terminal" id="terminal-project3-master"></div>
+                    </div>
+                    <div class="terminal-wrapper">
+                        <div class="terminal-title">
+                            <span style="display:flex;align-items:center;"><span class="terminal-number terminal-number-pink">T6</span><span class="terminal-role coder-role">CODER</span><input type="text" class="terminal-label" placeholder="label..." /></span>
+                            <span class="terminal-status" id="status-project3-coder">Connecting<span class="loading">...</span></span>
+                        </div>
+                        <div class="terminal" id="terminal-project3-coder"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OpenClaw Chat Panel -->
+            <div class="moltbot-panel">
+                <div class="moltbot-header">
+                    <span class="terminal-number terminal-number-yellow">T7</span>
+                    <span class="moltbot-title">OPENCLAW CHAT</span>
+                    <span id="openclaw-status" style="font-size: 0.7rem; color: var(--text-dim);">connecting...</span>
+                </div>
+                <div class="moltbot-chat">
+                    <div class="moltbot-messages" id="openclaw-messages">
+                        <div class="moltbot-message">
+                            <div class="moltbot-message-header">SYSTEM</div>
+                            Connecting to OpenClaw gateway...
+                        </div>
+                    </div>
+                    <div class="moltbot-input-container">
+                        <textarea
+                            class="moltbot-input"
+                            id="openclaw-input"
+                            placeholder="Chat with Claude via OpenClaw..."
+                        ></textarea>
+                        <button class="moltbot-send-btn" id="openclaw-send-btn" onclick="sendOpenClawMessage()">Send Message</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+    <script src="hive.js?v=4"></script>
+</body>
+</html>

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>TRON Light Cycles</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: monospace; }
+canvas { border: 2px solid #0ff; box-shadow: 0 0 20px #0ff, 0 0 40px #0ff; }
+#ui { color: #0ff; text-align: center; margin-bottom: 12px; font-size: 14px; letter-spacing: 2px; }
+#msg { font-size: 28px; color: #ff0; text-shadow: 0 0 10px #ff0; margin-top: 8px; min-height: 36px; }
+</style>
+</head>
+<body>
+<div id="ui">
+  TRON LIGHT CYCLES &nbsp;|&nbsp; YOU: <span style="color:#0ff">CYAN</span> &nbsp;|&nbsp; AI: <span style="color:#f0f">MAGENTA</span> &nbsp;|&nbsp; ARROW KEYS TO STEER
+  <div id="msg"></div>
+</div>
+<canvas id="c"></canvas>
+<script>
+const COLS = 80, ROWS = 60, CELL = 10;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = COLS * CELL;
+canvas.height = ROWS * CELL;
+
+const msg = document.getElementById('msg');
+
+const DIR = { UP:[0,-1], DOWN:[0,1], LEFT:[-1,0], RIGHT:[1,0] };
+
+let grid, p1, p2, running, animId;
+
+function initGame() {
+  grid = Array.from({length: ROWS}, () => new Array(COLS).fill(0));
+
+  p1 = {
+    x: Math.floor(COLS * 0.25), y: Math.floor(ROWS / 2),
+    dir: [1, 0], color: '#0ff', id: 1, alive: true
+  };
+  p2 = {
+    x: Math.floor(COLS * 0.75), y: Math.floor(ROWS / 2),
+    dir: [-1, 0], color: '#f0f', id: 2, alive: true
+  };
+
+  grid[p1.y][p1.x] = 1;
+  grid[p2.y][p2.x] = 2;
+
+  running = true;
+  msg.textContent = '';
+}
+
+function drawCell(x, y, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x * CELL + 1, y * CELL + 1, CELL - 2, CELL - 2);
+}
+
+function drawGrid() {
+  ctx.fillStyle = '#050510';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (grid[r][c] === 1) drawCell(c, r, '#0ff');
+      else if (grid[r][c] === 2) drawCell(c, r, '#f0f');
+    }
+  }
+
+  // Draw heads brighter
+  if (p1.alive) {
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = '#0ff';
+    ctx.shadowBlur = 12;
+    ctx.fillRect(p1.x * CELL + 1, p1.y * CELL + 1, CELL - 2, CELL - 2);
+    ctx.shadowBlur = 0;
+  }
+  if (p2.alive) {
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = '#f0f';
+    ctx.shadowBlur = 12;
+    ctx.fillRect(p2.x * CELL + 1, p2.y * CELL + 1, CELL - 2, CELL - 2);
+    ctx.shadowBlur = 0;
+  }
+}
+
+// AI: looks ahead and avoids walls/trails
+function aiMove() {
+  const [dx, dy] = p2.dir;
+  const dirs = [[0,-1],[0,1],[-1,0],[1,0]];
+
+  // Try current direction first, then turn
+  const ranked = dirs.slice().sort((a, b) => {
+    // Don't reverse
+    if (a[0] === -dx && a[1] === -dy) return 1;
+    if (b[0] === -dx && b[1] === -dy) return -1;
+    return score(p2.x + b[0], p2.y + b[1]) - score(p2.x + a[0], p2.y + a[1]);
+  });
+
+  for (const d of ranked) {
+    if (d[0] === -dx && d[1] === -dy) continue; // no 180
+    const nx = p2.x + d[0], ny = p2.y + d[1];
+    if (isSafe(nx, ny)) {
+      p2.dir = d;
+      return;
+    }
+  }
+}
+
+function score(x, y) {
+  // flood fill to estimate free space
+  if (!isSafe(x, y)) return -1;
+  let count = 0;
+  const visited = new Set();
+  const queue = [[x, y]];
+  visited.add(y * COLS + x);
+  const limit = 200;
+  while (queue.length && count < limit) {
+    const [cx, cy] = queue.shift();
+    count++;
+    for (const [dx, dy] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+      const nx = cx + dx, ny = cy + dy;
+      const key = ny * COLS + nx;
+      if (!visited.has(key) && isSafe(nx, ny)) {
+        visited.add(key);
+        queue.push([nx, ny]);
+      }
+    }
+  }
+  return count;
+}
+
+function isSafe(x, y) {
+  return x >= 0 && x < COLS && y >= 0 && y < ROWS && grid[y][x] === 0;
+}
+
+function movePlayer(p) {
+  const nx = p.x + p.dir[0];
+  const ny = p.y + p.dir[1];
+  if (!isSafe(nx, ny)) {
+    p.alive = false;
+    return;
+  }
+  p.x = nx;
+  p.y = ny;
+  grid[p.y][p.x] = p.id;
+}
+
+let lastTime = 0;
+const SPEED = 80; // ms per step
+
+function loop(ts) {
+  if (!running) return;
+  animId = requestAnimationFrame(loop);
+
+  if (ts - lastTime < SPEED) return;
+  lastTime = ts;
+
+  if (p2.alive) aiMove();
+  if (p1.alive) movePlayer(p1);
+  if (p2.alive) movePlayer(p2);
+
+  drawGrid();
+
+  if (!p1.alive && !p2.alive) { end('DRAW!'); }
+  else if (!p1.alive) { end('AI WINS! Press R to restart'); }
+  else if (!p2.alive) { end('YOU WIN! Press R to restart'); }
+}
+
+function end(text) {
+  running = false;
+  msg.textContent = text;
+}
+
+// Input
+const keys = {};
+document.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (!running && e.key.toLowerCase() === 'r') { initGame(); requestAnimationFrame(loop); }
+  if (running) {
+    const [dx, dy] = p1.dir;
+    if (e.key === 'ArrowUp' && dy !== 1)    p1.dir = [0, -1];
+    if (e.key === 'ArrowDown' && dy !== -1)  p1.dir = [0,  1];
+    if (e.key === 'ArrowLeft' && dx !== 1)   p1.dir = [-1, 0];
+    if (e.key === 'ArrowRight' && dx !== -1) p1.dir = [1,  0];
+  }
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault();
+});
+
+msg.textContent = 'Press R to start';
+</script>
+</body>
+</html>
