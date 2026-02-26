@@ -37,7 +37,6 @@
 - `/your-home/Downloads/moltbot/` - MoltBot
 - `/your-home/Downloads/ScreenPipe/` - ScreenPipe
 - `/your-home/Downloads/INT/` - INT
-- `/your-home/Downloads/login-geodo/` - Login Geodo (if exists)
 
 ## VERIFICATION CHECKLIST
 Before completing any task, verify:
