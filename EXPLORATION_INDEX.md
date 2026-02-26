@@ -315,7 +315,6 @@ npm start
 - OpenAI GPT (alternative)
 - Cloudflare Workers (deployment)
 - Database layers (SQLite, PostgreSQL)
-- Authentication (Clerk-compatible)
 - Vercel (frontend)
 - ngrok (tunneling)
 

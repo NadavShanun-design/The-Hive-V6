@@ -59,8 +59,15 @@ When told to "run the Hive", do ALL of the following (without stopping anything 
      `node server-hive.js >> server-output.log 2>&1 &`
 
 3. **Open in browser**: `open http://localhost:3002/hive.html`
-   - ALWAYS `/hive.html` — NOT `/` or `/index.html`
+   - ALWAYS `/hive.html` — this is the ONLY UI
    - `hive.html` = black/gray/white UI with The Queen panel ✅
-   - `index.html` = old neon/cyberpunk UI ❌
+   - There is NO index.html, NO old UI, NO Vibe Coder UI, NO Clerk login, NO Supabase login
+   - No sign-in or authentication of any kind — The Hive opens directly
 
 **Do NOT stop OpenClaw (the main process) or any other running processes.**
+
+### API Key Setup (first time only)
+When a user first opens The Hive, they click **"Connect API Key"** and enter their Anthropic API key (`sk-ant-...`).
+- The key is saved locally to `.openclaw-state/openclaw.json` (never committed, gitignored)
+- Once saved, The Queen (OpenClaw) is immediately active — no restart needed
+- The key is used entirely from this folder via `./node_modules/.bin/openclaw`
